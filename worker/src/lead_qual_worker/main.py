@@ -27,11 +27,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Literal
 
-from livekit.agents import Agent, AgentServer, JobContext, cli
+from livekit.agents import Agent, AgentServer, JobContext, cli, room_io
 from pydantic import Field
 from voice_agent_core import (
     BaseAgentSettings,
@@ -305,10 +306,19 @@ async def entry(ctx: JobContext) -> None:
     if publisher is not None:
         ctx.add_shutdown_callback(publisher.emit_final)
 
+    # BVC server-side noise cancellation requires the LiveKit Cloud project to
+    # support it; where it can't authenticate it fails on load and stalls session
+    # start (~6s before first audio). Off by default; set NOISE_CANCELLATION=1 to
+    # re-enable once the project has the feature.
+    room_options = (
+        default_room_options()
+        if os.getenv("NOISE_CANCELLATION") == "1"
+        else room_io.RoomOptions()
+    )
     await session.start(
         agent=LeadQualAgent(language_name=language.name),
         room=ctx.room,
-        room_options=default_room_options(),
+        room_options=room_options,
     )
     await ctx.connect()
 
