@@ -5,10 +5,12 @@ Implements the worker side of the qualification contract (see CONTRACT.md):
 On each **user** turn the agent fires a *fire-and-forget* side-call:
 
 1. Build a transcript-so-far and ask a cheap/fast LLM (JSON mode) to extract
-   the structured delta per ``extraction_prompt.md``.
-2. Feed that raw delta into :class:`QualificationReducer`, which holds the
+   the structured snapshot per ``extraction_prompt.md`` (6 slots + signals[] +
+   path + reason + next_question).
+2. Feed that raw extraction into :class:`QualificationReducer`, which holds the
    canonical state for the call and applies the contract's reducer rules
-   (merge non-null slots, union signals, monotonic score, verdict logic).
+   (merge non-null slots, union signals, monotonic ``path`` toward "more
+   qualified", latest non-empty reason/next_question).
 3. Publish the **merged snapshot** (full state, monotonic ``seq``) on the
    LiveKit data channel with ``topic="qualification"``.
 
@@ -35,8 +37,31 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-# Canonical slot keys per CONTRACT.md (web adapter maps use_case->useCase, etc.).
-SLOT_KEYS = ("use_case", "authority", "volume", "timeline")
+# Canonical slot keys per CONTRACT.md (the web adapter maps use_case->useCase,
+# real_time->realTime, current_provider->currentProvider, etc.).
+SLOT_KEYS = (
+    "use_case",
+    "real_time",
+    "volume",
+    "current_provider",
+    "priority",
+    "timeline",
+)
+
+# Recommended routing path (CONTRACT.md). Ordered by "more qualified":
+# needs-more-info < self-serve < {cloud-enterprise, on-prem}. cloud-enterprise
+# and on-prem are both "strong" (rank 2) — flips between them take the latest.
+PATH_NEEDS_MORE_INFO = "needs-more-info"
+PATH_SELF_SERVE = "self-serve"
+PATH_CLOUD_ENTERPRISE = "cloud-enterprise"
+PATH_ON_PREM = "on-prem"
+_PATH_RANK: dict[str, int] = {
+    PATH_NEEDS_MORE_INFO: 0,
+    PATH_SELF_SERVE: 1,
+    PATH_CLOUD_ENTERPRISE: 2,
+    PATH_ON_PREM: 2,
+}
+
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
@@ -49,10 +74,9 @@ class QualificationState:
         default_factory=lambda: dict.fromkeys(SLOT_KEYS)
     )
     signals: list[str] = field(default_factory=list)
-    score: int = 0
-    verdict: str = "PENDING"
-    next_question: str | None = None
+    path: str = PATH_NEEDS_MORE_INFO
     reason: str = ""
+    next_question: str | None = None
 
     def snapshot(self) -> dict[str, Any]:
         """Render the full merged snapshot for the data channel."""
@@ -61,32 +85,34 @@ class QualificationState:
             "seq": self.seq,
             "slots": dict(self.slots),
             "signals": list(self.signals),
-            "score": self.score,
-            "verdict": self.verdict,
-            "next_question": self.next_question,
+            "path": self.path,
             "reason": self.reason,
+            "next_question": self.next_question,
         }
 
 
-def _clamp_score(value: Any) -> int:
-    try:
-        return max(0, min(100, round(float(value))))
-    except (TypeError, ValueError):
-        return 0
+def _normalize_path(value: Any) -> str | None:
+    """Return a known ``path`` value, or ``None`` if unrecognized/empty."""
+    if not value:
+        return None
+    text = str(value).strip().lower()
+    return text if text in _PATH_RANK else None
 
 
 class QualificationReducer:
-    """Holds canonical call state and merges raw extraction deltas into it.
+    """Holds canonical call state and merges raw extraction snapshots into it.
 
     Reducer rules (CONTRACT.md):
 
     - **slots**: merge non-null only — a known slot is never reverted to null.
     - **signals**: union, dedupe, keep first-seen order.
-    - **score**: ``max(old, clamp(new, 0, 100))`` — monotonic, never drops.
-    - **verdict**: ``QUALIFIED`` if the side-call says so, or if
-      ``score >= 75 && use_case && authority && (volume || timeline)``;
-      ``NOT_QUALIFIED`` only when explicitly returned (and then it sticks);
-      else ``PENDING``.
+    - **path**: monotonic toward "more qualified". The side-call's latest
+      ``path`` is adopted only when it does not *downgrade* the current rank
+      (``needs-more-info`` < ``self-serve`` < {``cloud-enterprise``,
+      ``on-prem``}). Equal-rank moves take the latest (so the two "strong"
+      paths can flip between each other); a ``needs-more-info`` from the
+      side-call is never adopted once any stronger path is set.
+    - **reason / next_question**: latest non-empty.
     """
 
     def __init__(self) -> None:
@@ -119,38 +145,34 @@ class QualificationReducer:
                     st.signals.append(text)
                     existing.add(text)
 
-        # score: monotonic max.
-        st.score = max(st.score, _clamp_score(delta.get("score")))
+        # path: monotonic toward "more qualified" (no downgrade).
+        st.path = self._reduce_path(delta.get("path"))
 
-        # next_question / reason: take latest non-empty (purely advisory fields).
-        nq = delta.get("next_question")
-        st.next_question = str(nq).strip() if nq not in (None, "") else st.next_question
+        # reason / next_question: take latest non-empty (advisory fields).
         reason = delta.get("reason")
-        if reason not in (None, ""):
+        if reason not in (None, "") and str(reason).strip():
             st.reason = str(reason).strip()
+        nq = delta.get("next_question")
+        if nq not in (None, "") and str(nq).strip():
+            st.next_question = str(nq).strip()
 
-        st.verdict = self._resolve_verdict(delta.get("verdict"))
         return st
 
-    def _resolve_verdict(self, raw_verdict: Any) -> str:
-        st = self._state
-        incoming = str(raw_verdict).strip().upper() if raw_verdict else ""
+    def _reduce_path(self, raw_path: Any) -> str:
+        """Apply monotonic path routing. Returns the new canonical path.
 
-        # NOT_QUALIFIED only if explicit, and once set it sticks.
-        if st.verdict == "NOT_QUALIFIED":
-            return "NOT_QUALIFIED"
-        if incoming == "NOT_QUALIFIED":
-            return "NOT_QUALIFIED"
-
-        rule_qualified = (
-            st.score >= 75
-            and bool(st.slots["use_case"])
-            and bool(st.slots["authority"])
-            and bool(st.slots["volume"] or st.slots["timeline"])
-        )
-        if incoming == "QUALIFIED" or rule_qualified:
-            return "QUALIFIED"
-        return "PENDING"
+        Adopt the incoming path only when its rank is >= the current rank;
+        otherwise keep the current path (never downgrade). Equal rank adopts
+        the incoming value so the two "strong" paths flip to the latest. An
+        unknown/empty incoming path keeps the current path.
+        """
+        current = self._state.path
+        incoming = _normalize_path(raw_path)
+        if incoming is None:
+            return current
+        if _PATH_RANK[incoming] >= _PATH_RANK[current]:
+            return incoming
+        return current
 
 
 class QualificationExtractor:
@@ -208,7 +230,7 @@ def build_extraction_client(*, api_key: str) -> AsyncOpenAI:
 class QualificationPublisher:
     """Glues extractor + reducer + LiveKit data-channel publish together.
 
-    One instance per session. ``handle_user_turn`` is meant to be scheduled
+    One instance per session. ``handle_turn`` is meant to be scheduled
     fire-and-forget (``asyncio.create_task``) from the ``conversation_item_added``
     hook; the caller owns the strong reference to the task.
     """
@@ -252,8 +274,7 @@ class QualificationPublisher:
             log.info(
                 "qualification.published",
                 seq=state.seq,
-                score=state.score,
-                verdict=state.verdict,
+                path=state.path,
             )
         except Exception as exc:
             log.warning("qualification.publish_failed", error=repr(exc))
