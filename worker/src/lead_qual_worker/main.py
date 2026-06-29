@@ -312,6 +312,10 @@ async def entry(ctx: JobContext) -> None:
     )
     await ctx.connect()
 
+    # Greet only once the human is actually in the room, so the proactive opener
+    # isn't spoken into an empty room and gets missed.
+    await ctx.wait_for_participant()
+
     # Opener: a canned localized line (TTS-only, no LLM round-trip on turn 0) for
     # the snappiest first utterance.
     if session_settings.greeting_mode == "say":
