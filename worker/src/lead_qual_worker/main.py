@@ -72,16 +72,16 @@ VOICE_OUTPUT_RULES = (
 # Short localized openers (TTS-only first utterance = lowest first-token latency).
 # Falls back to English for languages without a tuned opener.
 _OPENERS: dict[str, str] = {
-    "en": "[warm] Hi, I'm Robin from Fish Audio. I help teams find the right voice setup for what they're building — so, what are you working on?",
-    "zh": "[warm] 你好，我是 Fish Audio 的 Robin。我帮各个团队找到最合适的语音方案——你们最近在做什么项目呢？",
-    "de": "[warm] Hi, ich bin Robin von Fish Audio. Ich helfe Teams, das richtige Voice-Setup zu finden — woran arbeitest du gerade?",
-    "ja": "[warm] こんにちは、Fish Audio の Robin です。チームに最適な音声構成を見つけるお手伝いをしています。今どんなものを作っていますか？",
-    "fr": "[warm] Bonjour, je suis Robin de Fish Audio. J'aide les équipes à trouver la bonne config voix — sur quoi travaillez-vous ?",
-    "es": "[warm] Hola, soy Robin de Fish Audio. Ayudo a los equipos a encontrar la configuración de voz adecuada — ¿en qué estás trabajando?",
-    "ko": "[warm] 안녕하세요, Fish Audio의 Robin입니다. 팀에 맞는 음성 구성을 찾도록 돕고 있어요. 지금 어떤 걸 만들고 계세요?",
-    "ar": "[warm] مرحباً، أنا روبن من Fish Audio. أساعد الفرق على إيجاد إعداد الصوت المناسب — على ماذا تعمل حالياً؟",
-    "ru": "[warm] Привет, я Робин из Fish Audio. Помогаю командам подобрать подходящее голосовое решение — над чем вы сейчас работаете?",
-    "pt": "[warm] Oi, sou o Robin da Fish Audio. Ajudo equipes a encontrar a configuração de voz certa — no que você está trabalhando?",
+    "en": "[warm] Hey, I'm Robin from Fish Audio — what are you building?",
+    "zh": "[warm] 嗨，我是 Fish Audio 的 Robin——你们在做什么项目？",
+    "de": "[warm] Hi, ich bin Robin von Fish Audio — woran arbeitest du?",
+    "ja": "[warm] こんにちは、Fish Audio の Robin です。何を作っているんですか？",
+    "fr": "[warm] Salut, je suis Robin de Fish Audio — sur quoi travaillez-vous ?",
+    "es": "[warm] Hola, soy Robin de Fish Audio — ¿en qué estás trabajando?",
+    "ko": "[warm] 안녕하세요, Fish Audio의 Robin이에요 — 무엇을 만들고 계세요?",
+    "ar": "[warm] مرحباً، أنا روبن من Fish Audio — على ماذا تعمل؟",
+    "ru": "[warm] Привет, я Робин из Fish Audio — над чем работаете?",
+    "pt": "[warm] Oi, sou o Robin da Fish Audio — no que você está trabalhando?",
 }
 
 # Strong refs to fire-and-forget side-call tasks so the loop doesn't GC them.
@@ -245,15 +245,20 @@ def _maybe_use_custom_llm(pipeline: Any, cfg: LeadQualSettings) -> bool:
     base_url = os.getenv("LLM_BASE_URL", "").strip()
     if not base_url:
         return False
+    # A stale LLM_MODEL like "openai/gpt-5.4-mini" must not be sent to this endpoint
+    # (it serves Gemma); fall back to the Gemma id. Set LLM_MODEL in .env to be explicit.
+    model = cfg.llm_model
+    if model.startswith(("openai/", "gpt-", "o1", "o3", "o4")):
+        model = "google/gemma-4-26B-A4B-it"
     try:
         from livekit.plugins import openai
 
         pipeline.llm = openai.LLM(
-            model=cfg.llm_model,
+            model=model,
             base_url=base_url,
             api_key=os.getenv("LLM_API_KEY", "").strip() or "EMPTY",
         )
-        log.info("llm.custom_endpoint", model=cfg.llm_model, base_url=base_url)
+        log.info("llm.custom_endpoint", model=model, base_url=base_url)
         return True
     except Exception as exc:
         log.warning("llm.custom_endpoint_failed", error=repr(exc))
