@@ -124,7 +124,10 @@ if settings.turn_detection_mode == "multilingual":
         MultilingualModel as _MultilingualModel,  # noqa: F401
     )
 
-server = AgentServer()
+# Keep one fully-initialized job process warm so a new call doesn't pay the
+# ~0.6-0.8s per-job process init ("no warmed process available for job"). Tunable
+# via NUM_IDLE_PROCESSES; each idle process holds the prewarmed models in RAM.
+server = AgentServer(num_idle_processes=int(os.getenv("NUM_IDLE_PROCESSES", "1")))
 server.setup_fnc = default_prewarm
 
 
