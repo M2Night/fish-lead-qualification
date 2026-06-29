@@ -5,7 +5,7 @@ Two pieces, deployed separately:
 | Piece | Where | What it is |
 | --- | --- | --- |
 | `web/` | **Vercel** | static demo page + a tiny token/dispatch API (`/api/session`, `/api/warmup`) |
-| `worker/` + `prompts/` | **LiveKit Cloud Agents** | the `lead-qual` voice worker (Deepgram STT · Gemma/OpenRouter LLM · Fish TTS) |
+| `worker/` (incl. `worker/prompts/`) | **LiveKit Cloud Agents** | the `lead-qual` voice worker (Deepgram STT · Gemma/OpenRouter LLM · Fish TTS) |
 
 The browser only ever gets a short-lived LiveKit participant JWT. All provider keys
 live server-side (Vercel env for the web, LiveKit agent secrets for the worker).
@@ -35,8 +35,9 @@ The Express app is exported as a serverless function (`web/vercel.json`,
 
 ## B. Worker → LiveKit Cloud Agents
 
-Deploys with the `lk` CLI from the **repo root** (the Dockerfile needs both
-`worker/` and `prompts/` in its build context).
+Deploys with the `lk` CLI from the **`worker/` directory** — a self-contained
+LiveKit agent project (`pyproject.toml` + `uv.lock` + `src/` + `prompts/` +
+`Dockerfile`).
 
 ### One-time setup
 
@@ -50,29 +51,28 @@ lk cloud auth          # opens a browser, links the project
 
 ### First deploy
 
-Run from the repo root (where the `Dockerfile` is):
+Run from `worker/`. Pick the project the web app uses, and the US region:
 
 ```bash
-lk agent create .
+cd worker
+lk agent create . --project fish-audio-demo --region us-east --secrets-file .env
 ```
 
 This builds the image (US-region build), registers an agent, writes a
 `livekit.toml` (commit it afterward), and starts the worker. The worker registers
 as `agent_name="lead-qual"`, matching what the web dispatches.
 
+> `--secrets-file .env` injects the provider keys but **also** `LIVEKIT_*`; that's
+> fine for create, but if you regenerate secrets later strip `LIVEKIT_URL` /
+> `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` — LiveKit Cloud injects those itself.
+
 ### Secrets
 
 The worker needs provider keys at runtime. Set them as agent secrets — either pass
-the env file at create time:
+the env file at create time (as above) or update them later (run from `worker/`):
 
 ```bash
-lk agent create . --secrets-file worker/.env
-```
-
-or update them later:
-
-```bash
-lk agent update-secrets --secrets-file worker/.env
+lk agent update-secrets --secrets-file .env
 ```
 
 Required secrets (see `worker/.env.example`):

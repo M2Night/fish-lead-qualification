@@ -13,8 +13,8 @@ OpenRouter LLM / Fish s2.1-pro TTS / multilingual turn detection) over LiveKit.
 | Path | What |
 |------|------|
 | `worker/` | Python LiveKit agent — lead-qual persona + per-turn qualification extraction. |
+| `worker/prompts/` | The agent's system prompt, runbook, and extraction prompt (editable). |
 | `web/` | Static demo client (LiveKit) + a small token/dispatch endpoint. |
-| `prompts/` | The agent's system prompt, runbook, and extraction prompt (editable). |
 | `CONTRACT.md` | The worker ↔ web data contract. |
 
 ## Why standalone

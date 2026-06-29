@@ -60,7 +60,9 @@ from lead_qual_worker.qualification import (
 log = get_logger(__name__)
 
 AGENT_NAME = "lead-qual"
-PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
+# prompts/ lives inside the worker project (worker/prompts); main.py is at
+# worker/src/lead_qual_worker/main.py, so parents[2] is the worker/ root.
+PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 # Voice-output discipline appended to the persona so the LLM emits clean spoken
 # text (Fish renders emotion markers like "(warm)"; the web strips them before

@@ -21,9 +21,9 @@ worker/
     qualification.py        # extraction side-call + reducer + publisher
 ```
 
-Prompts are loaded at runtime from the sibling `../prompts/` directory
-(`system_prompt.md`, `runbook.md`, `extraction_prompt.md`) — edit those without
-touching the worker.
+Prompts are loaded at runtime from the `prompts/` directory inside the worker
+project (`worker/prompts/system_prompt.md`, `runbook.md`, `extraction_prompt.md`)
+— edit those without touching the worker code.
 
 ## Setup
 
