@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lead-qual-worker"
+version = "0.1.0"
+description = "Standalone LiveKit voice worker for the Fish lead-qualification demo"
+readme = "README.md"
+requires-python = ">=3.10, <3.15"
+dependencies = [
+    "livekit-agents~=1.5",
+    "openai>=1.40",
+    "pydantic>=2.6",
+    "voice-agent-core",
+]
+
+[tool.uv.sources]
+# Vendored in-repo (worker/vendor/voice-agent-core) so this worker is fully
+# self-contained — no external/private fetch at install or build time.
+voice-agent-core = { path = "vendor/voice-agent-core", editable = false }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lead_qual_worker"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "B", "A", "C4", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Localized opener strings intentionally use full-width CJK / locale punctuation.
+"src/lead_qual_worker/main.py" = ["RUF001"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
