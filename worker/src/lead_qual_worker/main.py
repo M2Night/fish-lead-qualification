@@ -231,6 +231,32 @@ def _maybe_disable_reasoning(pipeline: Any, cfg: LeadQualSettings) -> None:
         log.warning("llm.reasoning_override_failed", error=repr(exc))
 
 
+def _maybe_use_custom_llm(pipeline: Any, cfg: LeadQualSettings) -> bool:
+    """Point the conversation LLM at a custom OpenAI-compatible endpoint.
+
+    When ``LLM_BASE_URL`` is set (e.g. the self-hosted Gemma SGLang server), use a
+    direct ``openai.LLM`` client — no OpenRouter proxy hop, and no
+    ``reasoning_effort`` (non-OpenAI models reject it). This is the single biggest
+    first-token latency lever. Returns True if it took over the LLM.
+    """
+    base_url = os.getenv("LLM_BASE_URL", "").strip()
+    if not base_url:
+        return False
+    try:
+        from livekit.plugins import openai
+
+        pipeline.llm = openai.LLM(
+            model=cfg.llm_model,
+            base_url=base_url,
+            api_key=os.getenv("LLM_API_KEY", "").strip() or "EMPTY",
+        )
+        log.info("llm.custom_endpoint", model=cfg.llm_model, base_url=base_url)
+        return True
+    except Exception as exc:
+        log.warning("llm.custom_endpoint_failed", error=repr(exc))
+        return False
+
+
 def _spawn(coro) -> None:
     """Schedule a fire-and-forget task with a strong ref so it isn't GC'd."""
     task = asyncio.create_task(coro)
@@ -262,7 +288,10 @@ async def entry(ctx: JobContext) -> None:
     except Exception as exc:
         log.warning("pipeline.build_failed", room=ctx.room.name, error=repr(exc))
         return
-    _maybe_disable_reasoning(pipeline, session_settings)
+    # Custom endpoint (Gemma) takes priority; otherwise fall back to the
+    # OpenRouter path with reasoning disabled for gpt-5/o-series models.
+    if not _maybe_use_custom_llm(pipeline, session_settings):
+        _maybe_disable_reasoning(pipeline, session_settings)
     session = build_session(pipeline)
     session_start = time.monotonic()
 
