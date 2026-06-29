@@ -311,8 +311,12 @@ function renderTranscript(){
    in place instead of stacking. */
 function upsertLine(who, key, text, final){
   const clean=stripEmotion(text);
-  if(!clean) return;
   const existing=transcriptLines.find(l=>l.key===key);
+  if(!clean){
+    // stripped to empty (pure emotion marker) — drop any stale interim line for this key
+    if(existing){ const i=transcriptLines.indexOf(existing); if(i>=0){ transcriptLines.splice(i,1); renderTranscript(); } }
+    return;
+  }
   if(existing){ existing.text=clean; existing.final=final; existing.who=who; }
   else { transcriptLines.push({who, key, text:clean, final}); }
   renderTranscript();
@@ -535,6 +539,7 @@ function wireRoom(r){
 /* CONTRACT.md web rules: seq guard + dual topic/kind guard. */
 let lastSeq=-Infinity;
 function handleData(payload, topic){
+  if(!callActive) return;   // ignore late packets after the call ended
   let data;
   try{ data=JSON.parse(new TextDecoder().decode(payload)); }
   catch{ return; } // not JSON → ignore

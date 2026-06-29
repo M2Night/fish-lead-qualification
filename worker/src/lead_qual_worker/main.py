@@ -106,6 +106,8 @@ class LeadQualSettings(BaseAgentSettings):
     greeting_mode: Literal["say", "generate", "none"] = "say"
 
     # Defaults tuned for the lead-qual demo (overridable via env).
+    # s2.1-pro = Fish's expressive model (emotion markers); PCM output is hardcoded in
+    # voice-agent-core which avoids the first-word crackle. Listen-test before changing.
     tts_model: str = "s2.1-pro"
     stt_model: str = ""  # "" -> Deepgram nova-3 default
 
@@ -295,10 +297,13 @@ async def entry(ctx: JobContext) -> None:
     def _on_close(_ev: Any) -> None:
         duration_s = round(time.monotonic() - session_start, 1)
         log.info("session.closed", room=ctx.room.name, duration_s=duration_s)
-        if publisher is not None:
-            _spawn(publisher.emit_final())
 
     session.on("close", _on_close)
+
+    # Guarantee the final qualification snapshot is awaited before the job exits —
+    # a close-event spawn can be GC'd / dropped as the process tears down.
+    if publisher is not None:
+        ctx.add_shutdown_callback(publisher.emit_final)
 
     await session.start(
         agent=LeadQualAgent(language_name=language.name),
