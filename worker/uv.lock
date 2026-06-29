@@ -1018,7 +1018,7 @@ requires-dist = [
     { name = "livekit-agents", specifier = "~=1.5" },
     { name = "openai", specifier = ">=1.40" },
     { name = "pydantic", specifier = ">=2.6" },
-    { name = "voice-agent-core", git = "https://github.com/M2Night/voice-agent-core.git?rev=4d1e07caeb9df09d97baddf1e55fa30ef8d90df2" },
+    { name = "voice-agent-core", git = "https://github.com/M2Night/voice-agent-core.git?rev=8ffcf9ec03314f45a691ecfbccef6e5dc0412ca7" },
 ]
 
 [package.metadata.requires-dev]
@@ -3008,7 +3008,7 @@ wheels = [
 [[package]]
 name = "voice-agent-core"
 version = "0.2.1"
-source = { git = "https://github.com/M2Night/voice-agent-core.git?rev=4d1e07caeb9df09d97baddf1e55fa30ef8d90df2#4d1e07caeb9df09d97baddf1e55fa30ef8d90df2" }
+source = { git = "https://github.com/M2Night/voice-agent-core.git?rev=8ffcf9ec03314f45a691ecfbccef6e5dc0412ca7#8ffcf9ec03314f45a691ecfbccef6e5dc0412ca7" }
 dependencies = [
     { name = "httpx" },
     { name = "livekit-agents", extra = ["deepgram", "fishaudio", "openai", "silero", "turn-detector"] },

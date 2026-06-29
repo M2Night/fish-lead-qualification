@@ -72,18 +72,19 @@ VOICE_OUTPUT_RULES = (
 )
 
 # Short localized openers (TTS-only first utterance = lowest first-token latency).
-# Falls back to English for languages without a tuned opener.
+# Warm, no-name greeting that invites the user to talk without the abrupt "what are
+# you building?". Falls back to English for languages without a tuned opener.
 _OPENERS: dict[str, str] = {
-    "en": "[warm] Hey, I'm Robin from Fish Audio — what are you building?",
-    "zh": "[warm] 嗨，我是 Fish Audio 的 Robin——你们在做什么项目？",
-    "de": "[warm] Hi, ich bin Robin von Fish Audio — woran arbeitest du?",
-    "ja": "[warm] こんにちは、Fish Audio の Robin です。何を作っているんですか？",
-    "fr": "[warm] Salut, je suis Robin de Fish Audio — sur quoi travaillez-vous ?",
-    "es": "[warm] Hola, soy Robin de Fish Audio — ¿en qué estás trabajando?",
-    "ko": "[warm] 안녕하세요, Fish Audio의 Robin이에요 — 무엇을 만들고 계세요?",
-    "ar": "[warm] مرحباً، أنا روبن من Fish Audio — على ماذا تعمل؟",
-    "ru": "[warm] Привет, я Робин из Fish Audio — над чем работаете?",
-    "pt": "[warm] Oi, sou o Robin da Fish Audio — no que você está trabalhando?",
+    "en": "[warm] Hi there, thanks for trying Fish Audio! How can I help you today?",
+    "zh": "[warm] 你好，欢迎体验 Fish Audio！有什么我可以帮你的吗？",
+    "de": "[warm] Hallo, schön dass du Fish Audio ausprobierst! Wie kann ich dir helfen?",
+    "ja": "[warm] こんにちは、Fish Audio をお試しいただきありがとうございます！どんなことをお手伝いしましょうか？",
+    "fr": "[warm] Bonjour, merci d'essayer Fish Audio ! Comment puis-je vous aider ?",
+    "es": "[warm] ¡Hola, gracias por probar Fish Audio! ¿En qué puedo ayudarte hoy?",
+    "ko": "[warm] 안녕하세요, Fish Audio를 사용해 주셔서 감사합니다! 무엇을 도와드릴까요?",
+    "ar": "[warm] مرحباً، شكراً لتجربتك Fish Audio! كيف يمكنني مساعدتك اليوم؟",
+    "ru": "[warm] Здравствуйте, спасибо, что попробовали Fish Audio! Чем я могу помочь?",
+    "pt": "[warm] Olá, obrigado por experimentar a Fish Audio! Como posso ajudar você hoje?",
 }
 
 # Short localized re-engagement nudge ("are you there?") and goodbye lines, used by
@@ -264,42 +265,6 @@ def _maybe_disable_reasoning(pipeline: Any, cfg: LeadQualSettings) -> None:
         log.warning("llm.reasoning_override_failed", error=repr(exc))
 
 
-def _maybe_use_custom_llm(pipeline: Any, cfg: LeadQualSettings) -> bool:
-    """Point the conversation LLM at a custom OpenAI-compatible endpoint.
-
-    When ``LLM_BASE_URL`` is set (e.g. the self-hosted Gemma SGLang server), use a
-    direct ``openai.LLM`` client — no OpenRouter proxy hop, and no
-    ``reasoning_effort`` (non-OpenAI models reject it). This is the single biggest
-    first-token latency lever. Returns True if it took over the LLM.
-    """
-    base_url = os.getenv("LLM_BASE_URL", "").strip()
-    if not base_url:
-        return False
-    # A stale LLM_MODEL like "openai/gpt-5.4-mini" must not be sent to this endpoint
-    # (it serves Gemma); fall back to the Gemma id. Set LLM_MODEL in .env to be explicit.
-    model = cfg.llm_model
-    if model.startswith(("openai/", "gpt-", "o1", "o3", "o4")):
-        model = "google/gemma-4-26B-A4B-it"
-    # Hard cap on reply length (voice wants 1-2 short sentences). Sent as `max_tokens`
-    # via extra_body for SGLang compatibility (it takes the legacy field). Tunable.
-    max_tokens = int(os.getenv("LLM_MAX_TOKENS", "60"))
-    try:
-        from livekit.plugins import openai
-
-        pipeline.llm = openai.LLM(
-            model=model,
-            base_url=base_url,
-            api_key=os.getenv("LLM_API_KEY", "").strip() or "EMPTY",
-            temperature=0.6,
-            extra_body={"max_tokens": max_tokens},
-        )
-        log.info("llm.custom_endpoint", model=model, base_url=base_url, max_tokens=max_tokens)
-        return True
-    except Exception as exc:
-        log.warning("llm.custom_endpoint_failed", error=repr(exc))
-        return False
-
-
 def _spawn(coro) -> None:
     """Schedule a fire-and-forget task with a strong ref so it isn't GC'd."""
     task = asyncio.create_task(coro)
@@ -331,10 +296,11 @@ async def entry(ctx: JobContext) -> None:
     except Exception as exc:
         log.warning("pipeline.build_failed", room=ctx.room.name, error=repr(exc))
         return
-    # Custom endpoint (Gemma) takes priority; otherwise fall back to the
-    # OpenRouter path with reasoning disabled for gpt-5/o-series models.
-    if not _maybe_use_custom_llm(pipeline, session_settings):
-        _maybe_disable_reasoning(pipeline, session_settings)
+    # The conversation LLM is selected by LLM_PROVIDER (build_pipeline -> build_llm):
+    # 'custom' = self-hosted OpenAI-compatible endpoint (e.g. Gemma/SGLang, via
+    # CUSTOM_LLM_* env), 'openrouter' = OpenRouter. For OpenRouter gpt-5/o-series we
+    # additionally disable reasoning for low-latency replies (no-op otherwise).
+    _maybe_disable_reasoning(pipeline, session_settings)
     session = build_session(pipeline)
     session_start = time.monotonic()
 
@@ -424,9 +390,9 @@ async def entry(ctx: JobContext) -> None:
     elif session_settings.greeting_mode == "generate":
         session.generate_reply(
             instructions=(
-                f"Greet the user warmly in {language.name} as Robin from Fish Audio, "
-                "say you help teams find the right voice setup, and ask what they're "
-                "building. One or two short sentences."
+                f"Greet the user warmly in {language.name} on behalf of Fish Audio "
+                "(do NOT introduce yourself by name), thank them for trying Fish Audio, "
+                "and ask how you can help. One or two short sentences."
             )
         )
 

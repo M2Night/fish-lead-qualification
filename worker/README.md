@@ -40,11 +40,15 @@ Required env (`.env`):
 | `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | LiveKit project |
 | `FISH_API_KEY` | Fish Audio TTS |
 | `FISH_VOICE_ID` | **single multilingual** Fish voice id (used for every language) |
-| `OPENROUTER_API_KEY` | conversation LLM + extraction side-call |
+| `OPENROUTER_API_KEY` | `openrouter` LLM provider + extraction side-call |
 | `DEEPGRAM_API_KEY` | streaming STT |
 
-Useful overrides: `LLM_MODEL`, `EXTRACTION_MODEL`, `TTS_MODEL`,
-`FISH_TTS_LATENCY_MODE`, `GREETING_MODE`. See `.env.example`.
+Conversation LLM is selected by `LLM_PROVIDER` (`custom` self-hosted OpenAI-compatible
+endpoint via `CUSTOM_LLM_*`, `openrouter` via `LLM_MODEL`, or `livekit`).
+
+Useful overrides: `LLM_PROVIDER`, `CUSTOM_LLM_MODEL` / `CUSTOM_LLM_BASE_URL`,
+`LLM_MODEL`, `EXTRACTION_MODEL`, `TTS_MODEL`, `FISH_TTS_LATENCY_MODE`, `GREETING_MODE`.
+See `.env.example`.
 
 > If `FISH_VOICE_ID` is unset the worker still runs (Fish provider default voice)
 > but logs a warning. If `OPENROUTER_API_KEY` is unset the qualification side-call

@@ -72,6 +72,7 @@ A `cloud-enterprise` or `on-prem` path is the "qualified" moment → trigger the
   `text.replace(/\[[^\]\n]{0,40}\]/g, "")` then trim.
 
 ## Prompts
-Persona + full Fish domain knowledge live in `prompts/system_prompt.md` (Robin). The
+Persona + full Fish domain knowledge live in `prompts/system_prompt.md` (an unnamed
+Fish Audio sales engineer — no persona name). The
 private routing rubric is in `prompts/runbook.md`. The side-call schema + rubric are in
 `prompts/extraction_prompt.md`. These are tuned with real call data.

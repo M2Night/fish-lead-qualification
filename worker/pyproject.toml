@@ -21,7 +21,7 @@ dev = ["ruff>=0.8"]
 [tool.uv.sources]
 # voice-agent-core is a public repo, pulled directly as a git dependency (single
 # source of truth). Pinned to a tag for reproducible builds; bump the tag to update.
-voice-agent-core = { git = "https://github.com/M2Night/voice-agent-core.git", rev = "4d1e07caeb9df09d97baddf1e55fa30ef8d90df2" }
+voice-agent-core = { git = "https://github.com/M2Night/voice-agent-core.git", rev = "8ffcf9ec03314f45a691ecfbccef6e5dc0412ca7" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lead_qual_worker"]

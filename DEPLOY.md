@@ -79,10 +79,15 @@ Required secrets (see `worker/.env.example`):
 
 - `FISH_API_KEY`, `FISH_VOICE_ID`
 - `DEEPGRAM_API_KEY`
-- `OPENROUTER_API_KEY` (qualification side-call; also the LLM fallback)
-- `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` (Gemma SGLang endpoint — the low-latency
-  conversation LLM; leave `LLM_BASE_URL` unset to fall back to OpenRouter)
-- optional tuning: `LLM_MAX_TOKENS` (default 60), `IDLE_MAX_NUDGES` (default 2),
+- `OPENROUTER_API_KEY` (qualification side-call; also the `openrouter` LLM provider)
+- `LLM_PROVIDER` (`custom` = self-hosted OpenAI-compatible endpoint, `openrouter`, or
+  `livekit`)
+- `CUSTOM_LLM_BASE_URL`, `CUSTOM_LLM_API_KEY`, `CUSTOM_LLM_MODEL` (Gemma SGLang
+  endpoint — the low-latency conversation LLM, used when `LLM_PROVIDER=custom`)
+- `LLM_MODEL` (model id for the `openrouter` / `livekit` providers; distinct from
+  `CUSTOM_LLM_MODEL` so the two never conflict)
+- optional tuning: `CUSTOM_LLM_MAX_TOKENS` (default 0 = no cap; 60 recommended for
+  voice), `IDLE_MAX_NUDGES` (default 2),
   `NUM_IDLE_PROCESSES` (default 1), `TURN_DETECTION_MODE=multilingual`,
   `FISH_TTS_LATENCY_MODE=low`, `PREEMPTIVE_GENERATION=true`
 
