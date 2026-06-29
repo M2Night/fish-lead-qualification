@@ -1,0 +1,16 @@
+{
+  "name": "fish-lead-qualification-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Web client + token/dispatch endpoint for the Fish Lead Qualification voice demo.",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "livekit-server-sdk": "^2.9.0"
+  }
+}

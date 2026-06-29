@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fish Audio · Lead Qualification Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Real LiveKit browser client (replaces the scripted demo). -->
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.7.5/dist/livekit-client.umd.min.js"></script>
+<style>
+  :root{
+    --level:0;
+    --ink:#1b1613; --muted:#9a8f81; --line:#ece6dc; --card:#ffffff; --frame:#fbf9f5;
+    --fish1:#a85bb6; --fish2:#d56fa0; --fish3:#b06a4c; --good:#1f9d57;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --talk: "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;position:relative;
+       background:linear-gradient(180deg,#f7f1f4 0%,#efe9e0 72%);background-attachment:fixed;overflow-x:hidden}
+  body::before,body::after{content:"";position:fixed;border-radius:50%;filter:blur(74px);z-index:-1;pointer-events:none}
+  body::before{width:520px;height:520px;left:-150px;top:-120px;
+       background:radial-gradient(circle,rgba(213,111,160,.18),transparent 70%);animation:drift1 19s ease-in-out infinite alternate}
+  body::after{width:560px;height:560px;right:-180px;bottom:-150px;
+       background:radial-gradient(circle,rgba(168,91,182,.16),transparent 70%);animation:drift2 23s ease-in-out infinite alternate}
+  @keyframes drift1{to{transform:translate(70px,46px)}}
+  @keyframes drift2{to{transform:translate(-54px,-44px)}}
+
+  .wrap{max-width:600px;margin:0 auto;padding:20px 22px 40px;min-height:100%;display:flex;flex-direction:column}
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand img{width:26px;height:26px;border-radius:7px;display:block}
+  .brand .nm{font-weight:600;font-size:14.5px;letter-spacing:.2px}
+  .brand .tag{font-size:11px;color:var(--muted);font-family:var(--mono);
+              border-left:1px solid var(--line);padding-left:10px;margin-left:2px}
+  .live{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .live i{width:7px;height:7px;border-radius:50%;background:#c4bcb0;transition:background .3s}
+  .live.on i{background:var(--good);animation:pulse 1.8s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(31,157,87,.5)}70%{box-shadow:0 0 0 7px rgba(31,157,87,0)}100%{box-shadow:0 0 0 0 rgba(31,157,87,0)}}
+
+  /* ===== controls (Start/End + language + states) ===== */
+  .controls{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:2px auto 10px}
+  .btn{font-family:var(--talk);font-weight:600;font-size:13.5px;border:0;border-radius:22px;padding:9px 20px;cursor:pointer;
+       color:#fff;background:linear-gradient(90deg,var(--fish1),var(--fish2));box-shadow:0 6px 18px rgba(213,111,160,.28);
+       transition:transform .15s,opacity .2s,filter .2s}
+  .btn:hover{transform:translateY(-1px)}
+  .btn:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:grayscale(.3)}
+  .btn.end{background:linear-gradient(90deg,#c25a73,#a8475c);box-shadow:0 6px 18px rgba(168,71,92,.26)}
+  .btn.ghost{background:#f2e7ef;color:#a85bb6;box-shadow:none;border:1px solid #eed4e6}
+  .lang{font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--card);
+        border:1px solid var(--line);border-radius:22px;padding:8px 14px;cursor:pointer}
+  .lang:disabled{opacity:.55;cursor:not-allowed}
+  .state{font-family:var(--mono);font-size:11px;letter-spacing:.4px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .state i{width:8px;height:8px;border-radius:50%;background:#c4bcb0;flex:none}
+  .state.connecting i,.state.cold i{background:#e0a23c;animation:pulse2 1.2s infinite}
+  .state.connected i{background:var(--good)}
+  .state.error i{background:#d3504f}
+  .state.ended i{background:#9a8f81}
+  @keyframes pulse2{50%{opacity:.4}}
+
+  /* ===== center voice presence ===== */
+  .hero{display:flex;flex-direction:column;align-items:center;text-align:center}
+  .voicewrap{position:relative;width:300px;height:110px;display:flex;align-items:center;justify-content:center}
+  .sparkles{position:absolute;inset:0;pointer-events:none;z-index:3}
+  .spark{position:absolute;color:#caa6e0;font-size:13px;opacity:0;transform:scale(.4);
+         text-shadow:0 0 6px rgba(150,90,170,.7);animation:twinkle .9s ease-out forwards}
+  @keyframes twinkle{0%{opacity:0;transform:scale(.3) translateY(0)}
+    30%{opacity:1;transform:scale(1.1) translateY(-4px)}100%{opacity:0;transform:scale(.5) translateY(-16px)}}
+  .voice{display:flex;align-items:center;gap:3px;height:26px}
+  .voice i{width:2.5px;min-height:3px;border-radius:2px;background:#a195a8}
+
+  /* small swimming Fish logo, top-left */
+  .logofish{display:inline-flex;cursor:pointer;transition:transform .3s cubic-bezier(.34,1.6,.5,1)}
+  .logofish:hover{transform:scale(1.08)}
+  .logofish.bounce{animation:bounce .55s}
+  @keyframes bounce{0%{transform:scale(1)}35%{transform:scale(1.1) translateY(-3px)}70%{transform:scale(.98)}100%{transform:scale(1)}}
+  .logofish svg{width:32px;height:auto;display:block;overflow:visible}
+
+  /* ===== transcript ===== */
+  .transcript{position:relative;margin:8px auto 0;max-width:486px;width:100%;height:312px;overflow-y:auto;
+              display:flex;flex-direction:column;gap:12px;padding:12px 22px;border-radius:18px;background:var(--frame);
+              box-shadow:0 14px 34px rgba(120,60,100,.07);scrollbar-width:thin;scrollbar-color:#ecccdf transparent;
+              -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 11%,#000 100%);
+                      mask-image:linear-gradient(180deg,transparent 0,#000 11%,#000 100%)}
+  .transcript::-webkit-scrollbar{width:6px}
+  .transcript::-webkit-scrollbar-thumb{background:#ecccdf;border-radius:6px}
+  .transcript>:first-child{margin-top:auto}
+  .empty{margin:auto;color:#bda2b4;font-family:var(--mono);font-size:12px;letter-spacing:.3px;text-align:center;line-height:1.7}
+  .line{display:flex;flex-direction:column;gap:3px;line-height:1.45}
+  .line.user{align-items:flex-end;text-align:right}
+  .line.agent{align-items:flex-start}
+  .line .who{font-family:var(--mono);font-size:8.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted)}
+  .line.agent .who{color:var(--fish1)}
+  .line .txt{font-family:var(--talk);font-size:13.5px;color:#9b948b;max-width:95%}
+  .line.now .txt{font-size:14px;font-weight:600;color:#1a1410;line-height:1.5;
+                 background:linear-gradient(180deg,rgba(255,210,235,.40),rgba(255,210,235,.16));
+                 padding:6px 12px;border-radius:12px;box-shadow:0 2px 14px rgba(213,111,160,.12)}
+  .line.now .txt .w{display:inline-block;opacity:0;animation:word .34s forwards}
+  @keyframes word{from{opacity:0;transform:translateY(.22em)}to{opacity:1;transform:none}}
+  .line .ann{font-family:var(--mono);font-size:10px;color:#c08fb0;display:none;letter-spacing:.3px}
+  .line.now .ann{display:block;margin-top:4px}
+
+  /* ===== intent + card ===== */
+  .intent{margin:16px auto 0;max-width:440px;width:100%}
+  .intent .lab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;
+               color:var(--muted);letter-spacing:.4px;text-transform:uppercase;margin-bottom:6px}
+  .intent .lab b{color:var(--ink);font-size:13px}
+  .track{height:8px;border-radius:5px;background:#efe2e9;overflow:hidden}
+  .track>i{display:block;height:100%;width:0;border-radius:5px;
+           background:linear-gradient(90deg,var(--fish1),var(--fish2),#f0a36a);transition:width .7s cubic-bezier(.2,.7,.2,1)}
+  .track.near>i{box-shadow:0 0 12px rgba(213,111,160,.7);animation:shimmer 1.1s infinite}
+  @keyframes shimmer{50%{filter:brightness(1.18)}}
+
+  .card{margin:16px auto 0;max-width:440px;width:100%;background:var(--card);
+        border:1px solid var(--line);border-radius:15px;padding:4px 18px 12px;
+        box-shadow:0 10px 30px rgba(120,60,100,.06);
+        opacity:.12;transform:translateY(10px);transition:opacity .7s,transform .7s}
+  .card.on{opacity:1;transform:none}
+  .card .hd{font-family:var(--mono);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding:10px 0 3px}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid #f1eaef;font-size:13.5px}
+  .row .k{color:#6b6258;font-weight:500}
+  .row .v{font-family:var(--mono);font-size:12px;color:#bca9b8}
+  .row.done .v{color:#2c2722}.row.done .k{color:#1a1714}
+  .row .tk{color:var(--good);margin-left:7px;opacity:0;transition:.3s}
+  .row.done .tk{opacity:1}
+  .badges{margin:6px 0 2px;min-height:14px}
+  .badge{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:20px;
+         background:#f7ecf3;color:#a85bb6;border:1px solid #eed4e6;margin:5px 5px 0 0}
+  .verdict{margin-top:12px;text-align:center;font-weight:700;letter-spacing:.6px;font-size:14px;
+           color:var(--good);opacity:0;transform:translateY(4px);transition:.5s}
+  .verdict.on{opacity:1;transform:none;animation:stamp .55s cubic-bezier(.2,1.5,.4,1);text-shadow:0 0 16px rgba(31,157,87,.3)}
+  .verdict.no{color:#b06a4c}
+  @keyframes stamp{0%{opacity:0;transform:scale(1.35) rotate(-4deg)}60%{opacity:1;transform:scale(.97) rotate(0)}100%{transform:scale(1)}}
+
+  /* QUALIFIED: contained celebration — card glows green once */
+  .card.win{animation:cardglow 2.8s ease-in-out}
+  @keyframes cardglow{
+    0%{box-shadow:0 0 0 0 rgba(31,157,87,0),0 10px 30px rgba(120,60,100,.06)}
+    38%{box-shadow:0 0 0 3px rgba(31,157,87,.22),0 12px 36px rgba(31,157,87,.15)}
+    100%{box-shadow:0 0 0 0 rgba(31,157,87,0),0 10px 30px rgba(120,60,100,.06)}}
+
+  @keyframes rise{to{opacity:1;transform:none}}
+
+  .audiogate{display:none;margin:0 auto 8px}
+  .audiogate.show{display:block}
+  .errbar{display:none;margin:6px auto 0;max-width:486px;font-family:var(--mono);font-size:11.5px;
+          color:#a8475c;background:#fbeef0;border:1px solid #f0d3d8;border-radius:12px;padding:8px 12px;text-align:center}
+  .errbar.show{display:block}
+</style>
+</head>
+<body>
+<!-- hidden sink for the agent's remote audio track -->
+<audio id="agentAudio" autoplay></audio>
+
+<div class="wrap">
+  <div class="top">
+    <div class="brand">
+      <span class="logofish" id="fish"><svg id="fishsvg" viewBox="30 168 452 160" xmlns="http://www.w3.org/2000/svg"></svg></span>
+      <span class="nm">Fish Audio</span><span class="tag">Lead Qualification</span>
+    </div>
+    <div class="live" id="live"><i></i> <span id="liveLabel">idle</span></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="startBtn">Start call</button>
+    <button class="btn end" id="endBtn" disabled>End call</button>
+    <select class="lang" id="lang" title="Conversation language">
+      <option value="en">English</option>
+      <option value="zh">汉语</option>
+      <option value="de">Deutsch</option>
+      <option value="ja">日本語</option>
+      <option value="fr">Français</option>
+      <option value="es">Español</option>
+      <option value="ko">한국어</option>
+      <option value="ar">العربية</option>
+      <option value="ru">Русский</option>
+      <option value="pt">Português</option>
+    </select>
+    <span class="state" id="state"><i></i><span id="stateLabel">idle</span></span>
+  </div>
+  <button class="btn ghost audiogate" id="audioGate">🔊 Tap to enable audio</button>
+
+  <div class="hero">
+    <div class="voicewrap">
+      <div class="sparkles" id="sparkles"></div>
+      <div class="voice" id="voice"></div>
+    </div>
+
+    <div class="errbar" id="errbar"></div>
+    <div class="transcript" id="transcript"></div>
+    <div class="reason" id="reason" style="font-family:var(--mono);font-size:12px;color:#bda2b4;margin-top:12px;min-height:16px;text-align:center"></div>
+
+    <div class="intent">
+      <div class="lab"><span>buying intent</span><b id="score">0</b></div>
+      <div class="track" id="track"><i id="scoreBar"></i></div>
+    </div>
+
+    <div class="card" id="card">
+      <div class="hd">Qualification</div>
+      <div id="slots"></div>
+      <div class="badges" id="badges"></div>
+      <div class="verdict" id="verdict"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const LK = window.LivekitClient || window.LiveKitClient; // UMD global
+const { Room, RoomEvent, Track, DisconnectReason } = LK;
+
+const SLOTS=[
+  {k:'useCase', label:'Use case'},{k:'role',label:'Authority'},
+  {k:'volume',  label:'Volume'},  {k:'timeline',label:'Timeline'},
+];
+
+const $=s=>document.querySelector(s);
+
+/* ============================================================
+   Fish logo + center voice meter (unchanged from the visual shell)
+   ============================================================ */
+const INK='#16120f', GRY='#7a7a7a';
+const BARS=[
+  {x:297.1,y:299.3,h:21.4,f:GRY,a:-29.3,e:-0.25,d:0.093},{x:456.7,y:249.9,h:27.1,f:GRY,a:0,e:0,d:0.150},
+  {x:424.7,y:256.6,h:47.4,f:GRY,a:-0.05,e:0,d:0.139},   {x:392.9,y:264.3,h:52.1,f:GRY,a:-32.7,e:-0.25,d:0.127},
+  {x:360.9,y:270.7,h:51.6,f:GRY,a:-31.6,e:-0.25,d:0.116},{x:328.9,y:276.4,h:46,f:GRY,a:-30.4,e:-0.25,d:0.104},
+  {x:38.1,y:200,h:19.4,f:INK,a:180,e:0.1,d:0},          {x:71,y:202.7,h:30.7,f:INK,a:100,e:0.3,d:0.012},
+  {x:103.9,y:198.4,h:77.4,f:INK,a:85,e:0,d:0.024},      {x:136.9,y:192,h:20,f:INK,a:240,e:0.035,d:0},
+  {x:136.9,y:245.4,h:58.3,f:INK,a:-40,e:-0.3,d:0.035},  {x:168.6,y:235.1,h:100.8,f:INK,a:-40,e:0,d:0.047},
+  {x:200.6,y:222.4,h:102.2,f:INK,a:-25.8,e:-0.25,d:0.058},{x:232.6,y:204.1,h:115.8,f:INK,a:-27,e:-0.25,d:0.070},
+  {x:264.5,y:190.2,h:120.1,f:INK,a:-28.1,e:-0.25,d:0.081},{x:297.1,y:181.9,h:107.1,f:INK,a:-29.3,e:-0.25,d:0.093},
+  {x:328.9,y:177,h:87.8,f:INK,a:-30.4,e:-0.25,d:0.104}, {x:392.9,y:178.1,h:75.4,f:INK,a:-32.7,e:-0.25,d:0.127},
+  {x:360.9,y:175,h:86.6,f:INK,a:-31.6,e:-0.25,d:0.116}, {x:424.7,y:185.2,h:60.2,f:INK,a:-0.05,e:0,d:0.139},
+  {x:456.7,y:204.1,h:38,f:INK,a:0,e:0,d:0.150},
+];
+let FBE=[];
+function buildFish(){
+  $('#fishsvg').innerHTML=BARS.map((b,i)=>
+    `<rect id="fb${i}" x="${b.x}" y="${b.y}" width="16" height="${b.h}" rx="8" fill="${b.f}"/>`).join('');
+  FBE=BARS.map((_,i)=>document.getElementById('fb'+i));
+}
+const VN=22; let VBE=[];
+function buildVoice(){
+  $('#voice').innerHTML=Array.from({length:VN},()=>'<i></i>').join('');
+  VBE=[...document.querySelectorAll('#voice i')];
+}
+
+function words(t){return t.split(' ').map((w,i)=>`<span class="w" style="animation-delay:${i*55}ms">${w}&nbsp;</span>`).join('');}
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+/* Strip emotion / delivery markers from transcript text per CONTRACT.md
+   so `(warm)` / `[whisper]` never render as words. */
+function stripEmotion(text){
+  return (text||'').replace(/\s*[\[(][a-z][a-z ,'’-]{0,22}[\])]/gi, '').trim();
+}
+
+function spark(n,cx,cy,spread){
+  const box=$('#sparkles'); const W=box.clientWidth||300, H=box.clientHeight||200;
+  cx=cx??W/2; cy=cy??H/2; spread=spread??70;
+  for(let i=0;i<n;i++){const s=document.createElement('span');s.className='spark';
+    s.textContent=Math.random()<.5?'✦':'✧';
+    s.style.left=(cx+(Math.random()-.5)*spread)+'px';
+    s.style.top=(cy+(Math.random()-.5)*spread)+'px';
+    s.style.fontSize=(9+Math.random()*9)+'px';
+    s.style.animationDelay=(Math.random()*.2)+'s';
+    box.appendChild(s); setTimeout(()=>s.remove(),1200);}
+}
+
+/* ============================================================
+   Live call state — replaces the scripted STEPS/play() entirely.
+   ============================================================ */
+let transcriptLines=[];   // [{who:'agent'|'user', text, key, final}]
+let lastScore=0;
+let speakingT=0;          // last time the agent was speaking (drives swim + stars)
+let callActive=false;     // true between connect and disconnect
+
+function resetVisuals(){
+  transcriptLines=[]; lastScore=0; speakingT=0;
+  buildFish(); buildVoice();
+  $('#slots').innerHTML=SLOTS.map(s=>
+    `<div class="row" data-row="${s.k}"><span class="k">${s.label}</span><span><span class="v">probing…</span><span class="tk">✓</span></span></div>`).join('');
+  $('#badges').innerHTML=''; $('#score').textContent='0'; $('#scoreBar').style.width='0';
+  $('#track').classList.remove('near'); $('#reason').innerHTML='';
+  $('#card').classList.remove('on','win'); $('#verdict').classList.remove('on','no'); $('#verdict').textContent='';
+  renderTranscript();
+}
+
+function emptyHint(html){ $('#transcript').innerHTML=`<div class="empty">${html}</div>`; }
+
+function renderTranscript(){
+  if(transcriptLines.length===0){
+    emptyHint(callActive
+      ? 'Listening… say hello to Fish 🐟'
+      : 'Press <b>Start call</b> and talk to Fish.');
+    return;
+  }
+  const n=transcriptLines.length;
+  $('#transcript').innerHTML=transcriptLines.map((s,j)=>{
+    const now=(j===n-1), age=n-1-j, op=now?1:Math.max(0.42,0.8-age*0.07);
+    const who=s.who==='agent'?'Fish':'You';
+    const body=now?words(esc(s.text)):esc(s.text);
+    return `<div class="line ${s.who}${now?' now':''}" style="opacity:${op.toFixed(2)}"><span class="who">${who}</span><span class="txt">${body}</span></div>`;
+  }).join('');
+  const tr=$('#transcript'); tr.scrollTop=tr.scrollHeight;
+}
+
+/* Upsert a transcript line keyed by segment id so interim → final updates
+   in place instead of stacking. */
+function upsertLine(who, key, text, final){
+  const clean=stripEmotion(text);
+  if(!clean) return;
+  const existing=transcriptLines.find(l=>l.key===key);
+  if(existing){ existing.text=clean; existing.final=final; existing.who=who; }
+  else { transcriptLines.push({who, key, text:clean, final}); }
+  renderTranscript();
+}
+
+function animateScore(target){
+  const el=$('#score'); const from=parseInt(el.textContent,10)||0; let t0=null;
+  (function go(t){ if(t0===null)t0=t; const k=Math.min(1,(t-t0)/650); const e=k*k*(3-2*k);
+    el.textContent=Math.round(from+(target-from)*e); if(k<1)requestAnimationFrame(go); })(performance.now());
+}
+
+/* Field adapter (CONTRACT.md): use_case→useCase, authority→role; volume/timeline pass through. */
+function adaptSlots(slots){
+  if(!slots) return {};
+  return {
+    useCase:  slots.use_case  ?? slots.useCase  ?? null,
+    role:     slots.authority ?? slots.role     ?? null,
+    volume:   slots.volume   ?? null,
+    timeline: slots.timeline ?? null,
+  };
+}
+
+/* Apply a qualification snapshot from the worker's data channel. */
+function applyQualification(q){
+  $('#card').classList.add('on');
+
+  const filled=adaptSlots(q.slots);
+  for(const s of SLOTS){
+    const val=filled[s.k];
+    if(val){
+      const row=document.querySelector(`#slots [data-row="${s.k}"]`);
+      if(row){ row.classList.add('done'); row.querySelector('.v').textContent=val; }
+    }
+  }
+
+  if(Array.isArray(q.signals))
+    $('#badges').innerHTML=q.signals.map(s=>`<span class="badge">${esc(s)}</span>`).join('');
+
+  const score=Math.max(0,Math.min(100, Number(q.score)||0));
+  animateScore(score); $('#scoreBar').style.width=score+'%';
+  if(score>=66) $('#track').classList.add('near');
+  if(score>lastScore) spark(score>=82?7:3, 150, 55, score>=82?130:80);
+  lastScore=score;
+
+  if(typeof q.reason==='string' && q.reason) $('#reason').innerHTML=`▸ ${esc(q.reason)}`;
+
+  const v=$('#verdict');
+  if(q.verdict==='QUALIFIED'){
+    v.textContent='✓ QUALIFIED'; v.classList.add('on'); v.classList.remove('no');
+    $('#card').classList.add('win'); spark(8,150,55,130);
+  } else if(q.verdict==='NOT_QUALIFIED'){
+    v.textContent='✕ NOT QUALIFIED'; v.classList.add('on','no');
+  }
+}
+
+/* breathing + speaking ripples + ambient sparkle — driven by `speakingT`
+   which is now set from real agent speaking state (not a fake step clock). */
+let lastAmbient=0;
+function loop(now){
+  const active=callActive && (now-speakingT)/1000<1.0; const t=now/1000;
+  const T=active?1.1:1.5, w=2*Math.PI/T;
+  for(let i=0;i<BARS.length;i++){const b=BARS[i], r=FBE[i]; if(!r)continue;
+    const osc=(1-Math.cos(w*(t-b.d)))/2;
+    const dy=b.a*0.6*osc;
+    const h=Math.max(4,b.h+b.a*b.e*osc);
+    r.setAttribute('transform',`translate(0 ${dy.toFixed(1)})`);
+    r.setAttribute('height',h.toFixed(1));
+  }
+  for(let k=0;k<VBE.length;k++){
+    const o=Math.abs(Math.sin(t*(active?2.0:0.6)+k*0.35));
+    VBE[k].style.height=Math.max(3,active?5+o*15:4+o*4).toFixed(1)+'px';}
+  if(active && now-lastAmbient>165){lastAmbient=now; spark(1,150,55,100);}
+  requestAnimationFrame(loop);
+}
+
+// hover interaction on the fish — bounce
+const fish=$('#fish');
+fish.addEventListener('mouseenter',()=>{fish.classList.remove('bounce');void fish.offsetWidth;fish.classList.add('bounce');});
+
+/* ============================================================
+   Connection state machine + LiveKit wiring
+   ============================================================ */
+const STATES={
+  idle:        {cls:'',          label:'idle',        live:'idle'},
+  connecting:  {cls:'connecting',label:'connecting…', live:'connecting'},
+  cold:        {cls:'cold',      label:'waking agent…',live:'cold start'},
+  connected:   {cls:'connected', label:'connected',   live:'live'},
+  ended:       {cls:'ended',     label:'call ended',  live:'ended'},
+  error:       {cls:'error',     label:'error',       live:'error'},
+};
+function setState(name, detail){
+  const s=STATES[name]||STATES.idle;
+  const el=$('#state'); el.className='state '+s.cls;
+  $('#stateLabel').textContent=detail||s.label;
+  $('#live').classList.toggle('on', name==='connected');
+  $('#liveLabel').textContent=s.live;
+}
+function showError(msg){
+  const b=$('#errbar'); b.textContent=msg; b.classList.add('show');
+}
+function clearError(){ $('#errbar').classList.remove('show'); }
+
+let room=null;
+let agentReadyTimer=null;
+let agentReady=false;
+let endedByUser=false;
+const AGENT_READY_TIMEOUT_MS=30000;
+
+function isAgent(p){
+  return !!p && (p.isAgent || (p.identity||'').toLowerCase().includes('agent') || (p.identity||'').toLowerCase().includes('lead-qual'));
+}
+
+function markAgentReady(){
+  if(agentReady) return;
+  agentReady=true;
+  if(agentReadyTimer){ clearTimeout(agentReadyTimer); agentReadyTimer=null; }
+  setState('connected');
+}
+
+async function startCall(){
+  if(callActive) return;
+  endedByUser=false; agentReady=false; clearError();
+  $('#startBtn').disabled=true; $('#lang').disabled=true;
+  setState('connecting');
+
+  // 1) mic permission up front (clear failure before we dispatch)
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    stream.getTracks().forEach(t=>t.stop());
+  }catch(e){
+    setState('error','mic blocked'); showError('Microphone permission denied — allow the mic and try again.');
+    $('#startBtn').disabled=false; $('#lang').disabled=false; return;
+  }
+
+  // 2) ask our server for a token + dispatch the lead-qual agent
+  let session;
+  try{
+    const res=await fetch('/api/session',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({language: $('#lang').value}),
+    });
+    session=await res.json();
+    if(!res.ok) throw new Error(session.error||'Failed to start session.');
+  }catch(e){
+    setState('error','start failed'); showError(e.message||'Could not reach the session endpoint.');
+    $('#startBtn').disabled=false; $('#lang').disabled=false; return;
+  }
+
+  // 3) connect to LiveKit and wire real events
+  room=new Room({adaptiveStream:true, dynacast:true});
+  wireRoom(room);
+
+  callActive=true;
+  resetVisuals();
+  $('#endBtn').disabled=false;
+
+  try{
+    await room.connect(session.livekitUrl, session.token);
+    // agent may already be present when connect resolves
+    for(const p of room.remoteParticipants.values()){ if(isAgent(p)){ markAgentReady(); break; } }
+    if(!agentReady){
+      setState('cold');
+      agentReadyTimer=setTimeout(()=>{
+        if(!agentReady && room){
+          setState('error','no agent');
+          showError(`No agent joined after ${AGENT_READY_TIMEOUT_MS/1000}s. Check the worker is running and registered as "lead-qual".`);
+          endedByUser=true; room.disconnect();
+        }
+      }, AGENT_READY_TIMEOUT_MS);
+    }
+    await room.localParticipant.setMicrophoneEnabled(true);
+    // try to unlock audio output (may be blocked until a gesture — handled below)
+    primeAudio();
+  }catch(e){
+    setState('error','connect failed'); showError(e.message||'LiveKit connection failed.');
+    teardown();
+  }
+}
+
+function wireRoom(r){
+  r.on(RoomEvent.Connected, ()=>{ /* state handled in startCall after connect resolves */ })
+   .on(RoomEvent.Disconnected, (reason)=>{
+      const serverClosed = reason===DisconnectReason.ROOM_DELETED
+        || reason===DisconnectReason.PARTICIPANT_REMOVED
+        || reason===DisconnectReason.SERVER_SHUTDOWN;
+      // ROOM_DELETED etc. are terminal — livekit-client does not auto-reconnect; end cleanly.
+      if(!endedByUser && $('#state').className.indexOf('error')===-1){
+        setState('ended', serverClosed?'call ended':'disconnected');
+      }
+      teardown();
+   })
+   .on(RoomEvent.TrackSubscribed, (track, pub, participant)=>{
+      if(track.kind==='audio' && isAgent(participant)){
+        track.attach($('#agentAudio'));   // route agent voice to the hidden <audio>
+        markAgentReady();
+      }
+   })
+   .on(RoomEvent.TrackUnsubscribed, (track)=>{
+      if(track.kind==='audio') track.detach();
+   })
+   .on(RoomEvent.ActiveSpeakersChanged, (speakers)=>{
+      // agent speaking → drive swim speed + center stars via speakingT
+      if(speakers.some(isAgent)) speakingT=performance.now();
+   })
+   .on(RoomEvent.TranscriptionReceived, (segments, participant)=>{
+      const who=isAgent(participant)?'agent':'user';
+      if(who==='agent') markAgentReady();
+      for(const seg of segments||[]){
+        if(seg && typeof seg.text==='string') upsertLine(who, seg.id||seg.text, seg.text, seg.final!==false);
+      }
+   })
+   .on(RoomEvent.DataReceived, (payload, participant, kind, topic)=>{
+      handleData(payload, topic);
+   })
+   .on(RoomEvent.AudioPlaybackStatusChanged, ()=>{
+      $('#audioGate').classList.toggle('show', !r.canPlaybackAudio);
+   });
+}
+
+/* CONTRACT.md web rules: seq guard + dual topic/kind guard. */
+let lastSeq=-Infinity;
+function handleData(payload, topic){
+  let data;
+  try{ data=JSON.parse(new TextDecoder().decode(payload)); }
+  catch{ return; } // not JSON → ignore
+  const isQual = topic==='qualification' || data.kind==='qualification';
+  if(!isQual) return;                         // dual guard
+  if(typeof data.seq==='number'){
+    if(data.seq<=lastSeq) return;             // ignore stale / backwards seq
+    lastSeq=data.seq;
+  }
+  applyQualification(data);
+}
+
+async function primeAudio(){
+  if(!room) return;
+  try{ await room.startAudio(); $('#audioGate').classList.remove('show'); }
+  catch{ $('#audioGate').classList.add('show'); }
+}
+$('#audioGate').addEventListener('click', async ()=>{
+  await primeAudio();
+});
+
+function teardown(){
+  if(agentReadyTimer){ clearTimeout(agentReadyTimer); agentReadyTimer=null; }
+  callActive=false;
+  if(room){
+    try{ room.removeAllListeners(); }catch{}
+    room=null;
+  }
+  lastSeq=-Infinity;
+  $('#startBtn').disabled=false; $('#lang').disabled=false; $('#endBtn').disabled=true;
+  $('#audioGate').classList.remove('show');
+  renderTranscript(); // refresh empty hint if needed
+}
+
+async function endCall(){
+  if(!room){ teardown(); setState('ended'); return; }
+  endedByUser=true;
+  setState('ended');
+  try{ await room.disconnect(); }catch{}
+  // Disconnected handler runs teardown(); ensure UI ends even if event is missed.
+  teardown();
+}
+
+$('#startBtn').addEventListener('click', startCall);
+$('#endBtn').addEventListener('click', endCall);
+window.addEventListener('beforeunload', ()=>{ if(room) room.disconnect(); });
+
+/* boot: idle visuals only (NO fake call). The swim/voice loop animates the
+   idle state; transcript + scorecard stay empty until a real call. */
+resetVisuals();
+setState('idle');
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
