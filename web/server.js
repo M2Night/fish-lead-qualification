@@ -126,15 +126,22 @@ app.post("/api/warmup", async (req, res) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
-app.listen(PORT, () => {
-  const haveKeys =
-    process.env.LIVEKIT_URL &&
-    process.env.LIVEKIT_API_KEY &&
-    process.env.LIVEKIT_API_SECRET;
-  console.log(`Fish Lead Qualification demo → http://localhost:${PORT}`);
-  if (!haveKeys) {
-    console.warn(
-      "  ⚠  LIVEKIT_* env not set — the page will load but 'Start call' will 500 until you add keys (.env).",
-    );
-  }
-});
+// Run a real HTTP listener only when invoked directly (local dev / a plain Node
+// host). On Vercel this file is imported as a serverless function, so we export the
+// Express app instead of calling listen() (see web/vercel.json).
+if (require.main === module) {
+  app.listen(PORT, () => {
+    const haveKeys =
+      process.env.LIVEKIT_URL &&
+      process.env.LIVEKIT_API_KEY &&
+      process.env.LIVEKIT_API_SECRET;
+    console.log(`Fish Lead Qualification demo → http://localhost:${PORT}`);
+    if (!haveKeys) {
+      console.warn(
+        "  ⚠  LIVEKIT_* env not set — the page will load but 'Start call' will 500 until you add keys (.env).",
+      );
+    }
+  });
+}
+
+module.exports = app;
