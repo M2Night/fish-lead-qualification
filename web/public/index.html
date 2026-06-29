@@ -104,17 +104,7 @@
   .line .ann{font-family:var(--mono);font-size:10px;color:#c08fb0;display:none;letter-spacing:.3px}
   .line.now .ann{display:block;margin-top:4px}
 
-  /* ===== intent + card ===== */
-  .intent{margin:16px auto 0;max-width:440px;width:100%}
-  .intent .lab{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;
-               color:var(--muted);letter-spacing:.4px;text-transform:uppercase;margin-bottom:6px}
-  .intent .lab b{color:var(--ink);font-size:13px}
-  .track{height:8px;border-radius:5px;background:#efe2e9;overflow:hidden}
-  .track>i{display:block;height:100%;width:0;border-radius:5px;
-           background:linear-gradient(90deg,var(--fish1),var(--fish2),#f0a36a);transition:width .7s cubic-bezier(.2,.7,.2,1)}
-  .track.near>i{box-shadow:0 0 12px rgba(213,111,160,.7);animation:shimmer 1.1s infinite}
-  @keyframes shimmer{50%{filter:brightness(1.18)}}
-
+  /* ===== card ===== */
   .card{margin:16px auto 0;max-width:440px;width:100%;background:var(--card);
         border:1px solid var(--line);border-radius:15px;padding:4px 18px 12px;
         box-shadow:0 10px 30px rgba(120,60,100,.06);
@@ -130,13 +120,21 @@
   .badges{margin:6px 0 2px;min-height:14px}
   .badge{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:20px;
          background:#f7ecf3;color:#a85bb6;border:1px solid #eed4e6;margin:5px 5px 0 0}
-  .verdict{margin-top:12px;text-align:center;font-weight:700;letter-spacing:.6px;font-size:14px;
-           color:var(--good);opacity:0;transform:translateY(4px);transition:.5s}
-  .verdict.on{opacity:1;transform:none;animation:stamp .55s cubic-bezier(.2,1.5,.4,1);text-shadow:0 0 16px rgba(31,157,87,.3)}
-  .verdict.no{color:#b06a4c}
-  @keyframes stamp{0%{opacity:0;transform:scale(1.35) rotate(-4deg)}60%{opacity:1;transform:scale(.97) rotate(0)}100%{transform:scale(1)}}
 
-  /* QUALIFIED: contained celebration — card glows green once */
+  /* routing PATH badge — reflects `path` (CONTRACT.md) */
+  .pathwrap{margin-top:12px;text-align:center;min-height:30px}
+  .pathbadge{display:inline-block;font-family:var(--talk);font-weight:600;font-size:13px;letter-spacing:.3px;
+             padding:6px 15px;border-radius:20px;border:1px solid transparent;
+             opacity:0;transform:translateY(4px);transition:.45s}
+  .pathbadge.on{opacity:1;transform:none;animation:stamp .55s cubic-bezier(.2,1.5,.4,1)}
+  .pathbadge.needs{background:#f0ece6;color:#8a8076;border-color:#e4ddd2}
+  .pathbadge.self{background:#e8f0fb;color:#3b6fb0;border-color:#d2e2f5}
+  .pathbadge.cloud{background:#e6f6ec;color:var(--good);border-color:#c6ebd3;text-shadow:0 0 16px rgba(31,157,87,.25)}
+  .pathbadge.onprem{background:#f1ebf8;color:#7a4fb0;border-color:#e0d2f0;text-shadow:0 0 16px rgba(122,79,176,.25)}
+  @keyframes stamp{0%{opacity:0;transform:scale(1.35) rotate(-4deg)}60%{opacity:1;transform:scale(.97) rotate(0)}100%{transform:scale(1)}}
+  .reason{font-family:var(--mono);font-size:12px;color:#bda2b4;margin-top:8px;min-height:16px;text-align:center}
+
+  /* strong-lead celebration — card glows green once */
   .card.win{animation:cardglow 2.8s ease-in-out}
   @keyframes cardglow{
     0%{box-shadow:0 0 0 0 rgba(31,157,87,0),0 10px 30px rgba(120,60,100,.06)}
@@ -192,18 +190,13 @@
 
     <div class="errbar" id="errbar"></div>
     <div class="transcript" id="transcript"></div>
-    <div class="reason" id="reason" style="font-family:var(--mono);font-size:12px;color:#bda2b4;margin-top:12px;min-height:16px;text-align:center"></div>
-
-    <div class="intent">
-      <div class="lab"><span>buying intent</span><b id="score">0</b></div>
-      <div class="track" id="track"><i id="scoreBar"></i></div>
-    </div>
 
     <div class="card" id="card">
       <div class="hd">Qualification</div>
       <div id="slots"></div>
       <div class="badges" id="badges"></div>
-      <div class="verdict" id="verdict"></div>
+      <div class="pathwrap"><span class="pathbadge" id="pathBadge"></span></div>
+      <div class="reason" id="reason"></div>
     </div>
   </div>
 </div>
@@ -212,10 +205,23 @@
 const LK = window.LivekitClient || window.LiveKitClient; // UMD global
 const { Room, RoomEvent, Track, DisconnectReason } = LK;
 
+/* 6 slots — keys match the worker's `slots` object verbatim (CONTRACT.md). */
 const SLOTS=[
-  {k:'useCase', label:'Use case'},{k:'role',label:'Authority'},
-  {k:'volume',  label:'Volume'},  {k:'timeline',label:'Timeline'},
+  {k:'use_case',         label:'Use case'},
+  {k:'real_time',        label:'Real-time'},
+  {k:'volume',           label:'Volume'},
+  {k:'current_provider', label:'Current provider'},
+  {k:'priority',         label:'Priority'},
+  {k:'timeline',         label:'Timeline'},
 ];
+
+/* routing PATH badge config (CONTRACT.md). */
+const PATHS={
+  'needs-more-info':  {cls:'needs',  label:'Assessing'},
+  'self-serve':       {cls:'self',   label:'Developer Console'},
+  'cloud-enterprise': {cls:'cloud',  label:'Enterprise fit'},
+  'on-prem':          {cls:'onprem', label:'On-prem / VPC'},
+};
 
 const $=s=>document.querySelector(s);
 
@@ -251,10 +257,11 @@ function buildVoice(){
 function words(t){return t.split(' ').map((w,i)=>`<span class="w" style="animation-delay:${i*55}ms">${w}&nbsp;</span>`).join('');}
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
-/* Strip emotion / delivery markers from transcript text per CONTRACT.md
-   so `(warm)` / `[whisper]` never render as words. */
+/* Strip free-form emotion / delivery cues from transcript text per CONTRACT.md
+   so `[warm]`, `[thoughtful, slightly amused]`, `[break]` never render as words.
+   Transcript display ONLY — never applied to data-channel payloads. */
 function stripEmotion(text){
-  return (text||'').replace(/\s*[\[(][a-z][a-z ,'’-]{0,22}[\])]/gi, '').trim();
+  return (text||'').replace(/\[[^\]\n]{0,40}\]/g, "").replace(/\s{2,}/g," ").trim();
 }
 
 function spark(n,cx,cy,spread){
@@ -273,18 +280,19 @@ function spark(n,cx,cy,spread){
    Live call state — replaces the scripted STEPS/play() entirely.
    ============================================================ */
 let transcriptLines=[];   // [{who:'agent'|'user', text, key, final}]
-let lastScore=0;
 let speakingT=0;          // last time the agent was speaking (drives swim + stars)
 let callActive=false;     // true between connect and disconnect
+let celebrated=false;     // strong-lead celebration fired once per call
 
 function resetVisuals(){
-  transcriptLines=[]; lastScore=0; speakingT=0;
+  transcriptLines=[]; speakingT=0; celebrated=false;
   buildFish(); buildVoice();
   $('#slots').innerHTML=SLOTS.map(s=>
     `<div class="row" data-row="${s.k}"><span class="k">${s.label}</span><span><span class="v">probing…</span><span class="tk">✓</span></span></div>`).join('');
-  $('#badges').innerHTML=''; $('#score').textContent='0'; $('#scoreBar').style.width='0';
-  $('#track').classList.remove('near'); $('#reason').innerHTML='';
-  $('#card').classList.remove('on','win'); $('#verdict').classList.remove('on','no'); $('#verdict').textContent='';
+  $('#badges').innerHTML='';
+  $('#reason').innerHTML='';
+  $('#pathBadge').className='pathbadge'; $('#pathBadge').textContent='';
+  $('#card').classList.remove('on','win');
   renderTranscript();
 }
 
@@ -324,31 +332,16 @@ function upsertLine(who, key, text, final){
   renderTranscript();
 }
 
-function animateScore(target){
-  const el=$('#score'); const from=parseInt(el.textContent,10)||0; let t0=null;
-  (function go(t){ if(t0===null)t0=t; const k=Math.min(1,(t-t0)/650); const e=k*k*(3-2*k);
-    el.textContent=Math.round(from+(target-from)*e); if(k<1)requestAnimationFrame(go); })(performance.now());
-}
-
-/* Field adapter (CONTRACT.md): use_case→useCase, authority→role; volume/timeline pass through. */
-function adaptSlots(slots){
-  if(!slots) return {};
-  return {
-    useCase:  slots.use_case  ?? slots.useCase  ?? null,
-    role:     slots.authority ?? slots.role     ?? null,
-    volume:   slots.volume   ?? null,
-    timeline: slots.timeline ?? null,
-  };
-}
-
-/* Apply a qualification snapshot from the worker's data channel. */
+/* Apply a qualification snapshot from the worker's data channel (CONTRACT.md).
+   Fields map straight through — slots keyed by name, signals → badges,
+   path → routing badge, reason → line under it. No numeric score now. */
 function applyQualification(q){
   $('#card').classList.add('on');
 
-  const filled=adaptSlots(q.slots);
+  const slots=q.slots||{};
   for(const s of SLOTS){
-    const val=filled[s.k];
-    if(val){
+    const val=slots[s.k];
+    if(val!=null && val!==''){
       const row=document.querySelector(`#slots [data-row="${s.k}"]`);
       if(row){ row.classList.add('done'); row.querySelector('.v').textContent=val; }
     }
@@ -357,20 +350,20 @@ function applyQualification(q){
   if(Array.isArray(q.signals))
     $('#badges').innerHTML=q.signals.map(s=>`<span class="badge">${esc(s)}</span>`).join('');
 
-  const score=Math.max(0,Math.min(100, Number(q.score)||0));
-  animateScore(score); $('#scoreBar').style.width=score+'%';
-  if(score>=66) $('#track').classList.add('near');
-  if(score>lastScore) spark(score>=82?7:3, 150, 55, score>=82?130:80);
-  lastScore=score;
+  const cfg=PATHS[q.path];
+  if(cfg){
+    const pb=$('#pathBadge');
+    pb.className='pathbadge on '+cfg.cls;
+    pb.textContent=cfg.label;
+  }
 
   if(typeof q.reason==='string' && q.reason) $('#reason').innerHTML=`▸ ${esc(q.reason)}`;
 
-  const v=$('#verdict');
-  if(q.verdict==='QUALIFIED'){
-    v.textContent='✓ QUALIFIED'; v.classList.add('on'); v.classList.remove('no');
-    $('#card').classList.add('win'); spark(8,150,55,130);
-  } else if(q.verdict==='NOT_QUALIFIED'){
-    v.textContent='✕ NOT QUALIFIED'; v.classList.add('on','no');
+  // Strong-lead "win" moment — once per call.
+  if((q.path==='cloud-enterprise' || q.path==='on-prem') && !celebrated){
+    celebrated=true;
+    $('#card').classList.add('win');
+    spark(8,150,55,130);
   }
 }
 
@@ -588,6 +581,13 @@ async function endCall(){
 $('#startBtn').addEventListener('click', startCall);
 $('#endBtn').addEventListener('click', endCall);
 window.addEventListener('beforeunload', ()=>{ if(room) room.disconnect(); });
+
+/* Warm-up: wake a cold worker on load and every 5 min while the page is open
+   and NOT in an active call. Fire-and-forget; errors ignored. Pauses for the
+   duration of a call (the interval simply skips ticks while callActive). */
+function warmup(){ fetch('/api/warmup',{method:'POST'}).catch(()=>{}); }
+warmup(); // on load, before any call
+setInterval(()=>{ if(!callActive) warmup(); }, 5*60*1000);
 
 /* boot: idle visuals only (NO fake call). The swim/voice loop animates the
    idle state; transcript + scorecard stay empty until a real call. */

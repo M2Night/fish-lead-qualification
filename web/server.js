@@ -107,6 +107,23 @@ app.post("/api/session", async (req, res) => {
   }
 });
 
+// Warm-up: dispatch the agent into a `warmup-<uuid>` room to wake a cold worker
+// before the user clicks Start. No participant token — the dispatch alone wakes
+// the worker, which short-circuits warmup rooms (CONTRACT.md). Never throws.
+app.post("/api/warmup", async (req, res) => {
+  try {
+    const { livekitUrl, apiKey, apiSecret } = requireLiveKitEnv();
+    const room = `warmup-${crypto.randomUUID()}`;
+    const metadata = JSON.stringify({ language: "en" });
+    await dispatchAgent({ livekitUrl, apiKey, apiSecret, room, metadata });
+    res.json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("[/api/warmup]", message);
+    res.json({ ok: false, error: message });
+  }
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(PORT, () => {
