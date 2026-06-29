@@ -72,16 +72,16 @@ VOICE_OUTPUT_RULES = (
 # Short localized openers (TTS-only first utterance = lowest first-token latency).
 # Falls back to English for languages without a tuned opener.
 _OPENERS: dict[str, str] = {
-    "en": "Hey, thanks for hopping on. What are you building that needs voice?",
-    "zh": "嗨，谢谢你抽空过来。你们在做什么需要语音的项目呢？",
-    "de": "Hi, schön dass du da bist. Woran arbeitest du, das Sprache braucht?",
-    "ja": "やあ、お時間ありがとう。音声が必要な何を作っているんですか？",
-    "fr": "Salut, merci d'être là. Sur quoi travailles-tu qui a besoin de voix ?",
-    "es": "Hola, gracias por conectarte. ¿Qué estás construyendo que necesita voz?",
-    "ko": "안녕하세요, 시간 내주셔서 감사해요. 음성이 필요한 어떤 걸 만들고 계세요?",
-    "ar": "أهلاً، شكراً لانضمامك. ما الذي تبنيه ويحتاج إلى الصوت؟",
-    "ru": "Привет, спасибо, что подключились. Что вы создаёте, где нужен голос?",
-    "pt": "Oi, obrigado por entrar. O que você está construindo que precisa de voz?",
+    "en": "[warm] Hi, I'm Robin from Fish Audio. I help teams find the right voice setup for what they're building — so, what are you working on?",
+    "zh": "[warm] 你好，我是 Fish Audio 的 Robin。我帮各个团队找到最合适的语音方案——你们最近在做什么项目呢？",
+    "de": "[warm] Hi, ich bin Robin von Fish Audio. Ich helfe Teams, das richtige Voice-Setup zu finden — woran arbeitest du gerade?",
+    "ja": "[warm] こんにちは、Fish Audio の Robin です。チームに最適な音声構成を見つけるお手伝いをしています。今どんなものを作っていますか？",
+    "fr": "[warm] Bonjour, je suis Robin de Fish Audio. J'aide les équipes à trouver la bonne config voix — sur quoi travaillez-vous ?",
+    "es": "[warm] Hola, soy Robin de Fish Audio. Ayudo a los equipos a encontrar la configuración de voz adecuada — ¿en qué estás trabajando?",
+    "ko": "[warm] 안녕하세요, Fish Audio의 Robin입니다. 팀에 맞는 음성 구성을 찾도록 돕고 있어요. 지금 어떤 걸 만들고 계세요?",
+    "ar": "[warm] مرحباً، أنا روبن من Fish Audio. أساعد الفرق على إيجاد إعداد الصوت المناسب — على ماذا تعمل حالياً؟",
+    "ru": "[warm] Привет, я Робин из Fish Audio. Помогаю командам подобрать подходящее голосовое решение — над чем вы сейчас работаете?",
+    "pt": "[warm] Oi, sou o Robin da Fish Audio. Ajudo equipes a encontrar a configuração de voz certa — no que você está trabalhando?",
 }
 
 # Strong refs to fire-and-forget side-call tasks so the loop doesn't GC them.
@@ -349,24 +349,24 @@ async def entry(ctx: JobContext) -> None:
         room=ctx.room,
         room_options=room_options,
     )
-    await ctx.connect()
 
-    # Greet only once the human is actually in the room, so the proactive opener
-    # isn't spoken into an empty room and gets missed.
-    await ctx.wait_for_participant()
-
-    # Opener: a canned localized line (TTS-only, no LLM round-trip on turn 0) for
-    # the snappiest first utterance.
+    # Kick the opener BEFORE connecting so its TTS synthesis overlaps the room
+    # connection (livekit-demo pattern, agent.py:943-944) — shaves the connect time
+    # off the first audio. Not awaited; it buffers and flushes once connected. The
+    # browser is already in the room (it joins, then dispatches the agent), so the
+    # greeting is heard.
     if session_settings.greeting_mode == "say":
-        opener = _OPENERS.get(language.code, _OPENERS["en"])
-        await session.say(opener)
+        session.say(_OPENERS.get(language.code, _OPENERS["en"]))
     elif session_settings.greeting_mode == "generate":
-        await session.generate_reply(
+        session.generate_reply(
             instructions=(
-                f"Greet the user warmly in {language.name} and ask what they're "
-                "building that needs voice. One short sentence."
+                f"Greet the user warmly in {language.name} as Robin from Fish Audio, "
+                "say you help teams find the right voice setup, and ask what they're "
+                "building. One or two short sentences."
             )
         )
+
+    await ctx.connect()
 
 
 if __name__ == "__main__":
