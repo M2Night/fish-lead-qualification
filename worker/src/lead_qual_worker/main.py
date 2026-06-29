@@ -250,6 +250,9 @@ def _maybe_use_custom_llm(pipeline: Any, cfg: LeadQualSettings) -> bool:
     model = cfg.llm_model
     if model.startswith(("openai/", "gpt-", "o1", "o3", "o4")):
         model = "google/gemma-4-26B-A4B-it"
+    # Hard cap on reply length (voice wants 1-2 short sentences). Sent as `max_tokens`
+    # via extra_body for SGLang compatibility (it takes the legacy field). Tunable.
+    max_tokens = int(os.getenv("LLM_MAX_TOKENS", "60"))
     try:
         from livekit.plugins import openai
 
@@ -257,8 +260,10 @@ def _maybe_use_custom_llm(pipeline: Any, cfg: LeadQualSettings) -> bool:
             model=model,
             base_url=base_url,
             api_key=os.getenv("LLM_API_KEY", "").strip() or "EMPTY",
+            temperature=0.6,
+            extra_body={"max_tokens": max_tokens},
         )
-        log.info("llm.custom_endpoint", model=model, base_url=base_url)
+        log.info("llm.custom_endpoint", model=model, base_url=base_url, max_tokens=max_tokens)
         return True
     except Exception as exc:
         log.warning("llm.custom_endpoint_failed", error=repr(exc))
@@ -360,9 +365,10 @@ async def entry(ctx: JobContext) -> None:
 
     # Kick the opener BEFORE connecting so its TTS synthesis overlaps the room
     # connection (livekit-demo pattern, agent.py:943-944) — shaves the connect time
-    # off the first audio. Not awaited; it buffers and flushes once connected. The
-    # browser is already in the room (it joins, then dispatches the agent), so the
-    # greeting is heard.
+    # off the first audio. say()/generate_reply() return a SpeechHandle (NOT a
+    # coroutine), so not awaiting is correct — the speech is queued and flushes once
+    # connected. The browser is already in the room (it joins, then dispatches the
+    # agent), so the greeting is heard.
     if session_settings.greeting_mode == "say":
         session.say(_OPENERS.get(language.code, _OPENERS["en"]))
     elif session_settings.greeting_mode == "generate":

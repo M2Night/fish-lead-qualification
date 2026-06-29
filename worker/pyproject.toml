@@ -15,6 +15,9 @@ dependencies = [
     "voice-agent-core",
 ]
 
+[dependency-groups]
+dev = ["ruff>=0.8"]
+
 [tool.uv.sources]
 # voice-agent-core is a public repo, pulled directly as a git dependency (single
 # source of truth). Pinned to a tag for reproducible builds; bump the tag to update.
