@@ -5,17 +5,16 @@ registers as agent `lead-qual`, runs a multilingual discovery call (Fish s2.1-pr
 TTS, Deepgram STT, OpenRouter LLM), and streams structured qualification snapshots
 to the web client over a LiveKit data channel.
 
-Self-contained: the engine library (`voice-agent-core`) is vendored under
-`vendor/voice-agent-core` and wired as a path dependency, so no external/private
-fetch is needed.
+The engine library (`voice-agent-core`) is a **public git dependency**, pinned to a
+commit for reproducible builds (see `[tool.uv.sources]` in `pyproject.toml`). Bump the
+pin to update.
 
 ## Layout
 
 ```
 worker/
-  pyproject.toml            # uv project; path dep -> vendor/voice-agent-core
+  pyproject.toml            # uv project; git dep -> M2Night/voice-agent-core (pinned)
   .env.example              # copy to .env and fill in keys
-  vendor/voice-agent-core/  # vendored engine library
   src/lead_qual_worker/
     main.py                 # entrypoint: agent + session + data-channel emit
     languages.py            # language -> STT language + Fish locale + name table

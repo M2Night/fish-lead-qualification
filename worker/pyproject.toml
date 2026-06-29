@@ -16,9 +16,9 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-# Vendored in-repo (worker/vendor/voice-agent-core) so this worker is fully
-# self-contained — no external/private fetch at install or build time.
-voice-agent-core = { path = "vendor/voice-agent-core", editable = false }
+# voice-agent-core is a public repo, pulled directly as a git dependency (single
+# source of truth). Pinned to a tag for reproducible builds; bump the tag to update.
+voice-agent-core = { git = "https://github.com/M2Night/voice-agent-core.git", rev = "4d1e07caeb9df09d97baddf1e55fa30ef8d90df2" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lead_qual_worker"]

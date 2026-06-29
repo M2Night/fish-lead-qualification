@@ -21,3 +21,6 @@ out/
 .idea/
 .vscode/
 *.log
+
+# IDE module files
+*.iml

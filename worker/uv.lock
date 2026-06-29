@@ -1013,7 +1013,7 @@ requires-dist = [
     { name = "livekit-agents", specifier = "~=1.5" },
     { name = "openai", specifier = ">=1.40" },
     { name = "pydantic", specifier = ">=2.6" },
-    { name = "voice-agent-core", directory = "vendor/voice-agent-core" },
+    { name = "voice-agent-core", git = "https://github.com/M2Night/voice-agent-core.git?rev=4d1e07caeb9df09d97baddf1e55fa30ef8d90df2" },
 ]
 
 [[package]]
@@ -2975,7 +2975,7 @@ wheels = [
 [[package]]
 name = "voice-agent-core"
 version = "0.2.1"
-source = { directory = "vendor/voice-agent-core" }
+source = { git = "https://github.com/M2Night/voice-agent-core.git?rev=4d1e07caeb9df09d97baddf1e55fa30ef8d90df2#4d1e07caeb9df09d97baddf1e55fa30ef8d90df2" }
 dependencies = [
     { name = "httpx" },
     { name = "livekit-agents", extra = ["deepgram", "fishaudio", "openai", "silero", "turn-detector"] },
@@ -2988,29 +2988,6 @@ dependencies = [
     { name = "pyyaml" },
     { name = "structlog" },
     { name = "tenacity" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "livekit-agents", extras = ["deepgram", "fishaudio", "openai", "silero", "turn-detector"], specifier = "~=1.5" },
-    { name = "livekit-plugins-ai-coustics", specifier = "~=0.2" },
-    { name = "livekit-plugins-noise-cancellation", specifier = "~=0.2" },
-    { name = "opentelemetry-api", specifier = ">=1.25" },
-    { name = "opentelemetry-sdk", specifier = ">=1.25" },
-    { name = "pydantic", specifier = ">=2.6" },
-    { name = "pydantic-settings", specifier = ">=2.2" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "structlog", specifier = ">=24.1" },
-    { name = "tenacity", specifier = ">=8.2" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-asyncio", specifier = ">=0.23" },
-    { name = "pytest-cov", specifier = ">=5.0" },
-    { name = "ruff", specifier = ">=0.5" },
 ]
 
 [[package]]
