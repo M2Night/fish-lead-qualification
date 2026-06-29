@@ -331,13 +331,15 @@ function upsertLine(who, key, text, final){
     }
     return;
   }
-  if(line){ line.parts[key]=clean; line.who=who; }
+  if(line){ line.parts[key]=clean; line.who=who; line.ts=Date.now(); }
   else {
     const last=transcriptLines[transcriptLines.length-1];
-    if(last && last.who===who){ line=last; }              // merge consecutive same-speaker
-    else { line={who, parts:{}, order:[]}; transcriptLines.push(line); }
+    // merge into the previous line only if it's the same speaker AND recent (a single
+    // utterance the turn-detector split on a pause); otherwise it's a new turn.
+    if(last && last.who===who && (Date.now()-(last.ts||0))<6000){ line=last; }
+    else { line={who, parts:{}, order:[], ts:Date.now()}; transcriptLines.push(line); }
     if(!(key in line.parts)) line.order.push(key);
-    line.parts[key]=clean;
+    line.parts[key]=clean; line.ts=Date.now();
   }
   renderTranscript();
 }
