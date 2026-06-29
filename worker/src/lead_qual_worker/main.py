@@ -26,6 +26,7 @@ from dispatch metadata.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import time
@@ -37,6 +38,7 @@ from pydantic import Field
 from voice_agent_core import (
     BaseAgentSettings,
     OpenRouterSettings,
+    attach_idle_watcher,
     build_pipeline,
     build_session,
     default_prewarm,
@@ -82,6 +84,34 @@ _OPENERS: dict[str, str] = {
     "ar": "[warm] مرحباً، أنا روبن من Fish Audio — على ماذا تعمل؟",
     "ru": "[warm] Привет, я Робин из Fish Audio — над чем работаете?",
     "pt": "[warm] Oi, sou o Robin da Fish Audio — no que você está trabalhando?",
+}
+
+# Short localized re-engagement nudge ("are you there?") and goodbye lines, used by
+# the idle watcher when the user goes silent. Same 10 languages as _OPENERS; English
+# is the fallback.
+_IDLE_NUDGES: dict[str, str] = {
+    "en": "[curious] Are you still there?",
+    "zh": "[curious] 你还在吗？",
+    "de": "[curious] Bist du noch da?",
+    "ja": "[curious] まだいらっしゃいますか？",
+    "fr": "[curious] Vous êtes toujours là ?",
+    "es": "[curious] ¿Sigues ahí?",
+    "ko": "[curious] 아직 계신가요?",
+    "ar": "[curious] هل ما زلت معي؟",
+    "ru": "[curious] Вы ещё здесь?",
+    "pt": "[curious] Você ainda está aí?",
+}
+_IDLE_GOODBYES: dict[str, str] = {
+    "en": "[warm] Looks like you stepped away — I'll let you go. Reach us anytime at fish dot audio. Take care!",
+    "zh": "[warm] 看起来你先忙——那我先挂啦，随时来 fish dot audio 找我们。再见！",
+    "de": "[warm] Du bist wohl beschäftigt — ich lasse dich gehen. Erreich uns jederzeit auf fish dot audio. Mach's gut!",
+    "ja": "[warm] 少し席を外されているようですね。今日はここまでにします。いつでも fish dot audio へどうぞ。失礼します！",
+    "fr": "[warm] On dirait que vous êtes occupé — je vous laisse. Retrouvez-nous sur fish dot audio. À bientôt !",
+    "es": "[warm] Parece que estás ocupado — te dejo. Búscanos cuando quieras en fish dot audio. ¡Hasta pronto!",
+    "ko": "[warm] 잠시 자리를 비우신 것 같네요. 오늘은 여기까지 할게요. 언제든 fish dot audio로 찾아주세요. 안녕히 계세요!",
+    "ar": "[warm] يبدو أنك مشغول — سأتركك الآن. تواصل معنا في أي وقت على fish dot audio. مع السلامة!",
+    "ru": "[warm] Похоже, вы отошли — не буду задерживать. Пишите в любое время на fish dot audio. Всего доброго!",
+    "pt": "[warm] Parece que você saiu — vou deixar você ir. Fale com a gente quando quiser em fish dot audio. Até logo!",
 }
 
 # Strong refs to fire-and-forget side-call tasks so the loop doesn't GC them.
@@ -347,6 +377,26 @@ async def entry(ctx: JobContext) -> None:
     # a close-event spawn can be GC'd / dropped as the process tears down.
     if publisher is not None:
         ctx.add_shutdown_callback(publisher.emit_final)
+
+    # Idle / silence handling: don't get stuck if the user goes quiet. The watcher
+    # fires on LiveKit's user "away" state (~15s of silence), then again every
+    # `retry_interval` up to `max_consecutive` attempts. We nudge ("are you still
+    # there?") on the early attempts, and on the LAST attempt say a brief goodbye
+    # and delete the room so the call actually ends instead of hanging open.
+    idle_max = max(1, int(os.getenv("IDLE_MAX_NUDGES", "2")))
+
+    async def _on_idle(attempt: int) -> None:
+        if attempt < idle_max:
+            session.say(_IDLE_NUDGES.get(language.code, _IDLE_NUDGES["en"]))
+            return
+        handle = session.say(_IDLE_GOODBYES.get(language.code, _IDLE_GOODBYES["en"]))
+        with contextlib.suppress(Exception):
+            await handle  # let the goodbye finish playing before we tear down
+        log.info("session.idle_ended", room=ctx.room.name, attempts=attempt)
+        with contextlib.suppress(Exception):
+            await ctx.delete_room()  # disconnect the browser → call ends
+
+    attach_idle_watcher(session, _on_idle, max_consecutive=idle_max)
 
     # BVC server-side noise cancellation requires the LiveKit Cloud project to
     # support it; where it can't authenticate it fails on load and stalls session
