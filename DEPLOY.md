@@ -35,9 +35,24 @@ The Express app is exported as a serverless function (`web/vercel.json`,
 
 ## B. Worker → LiveKit Cloud Agents
 
-Deploys with the `lk` CLI from the **`worker/` directory** — a self-contained
-LiveKit agent project (`pyproject.toml` + `uv.lock` + `src/` + `prompts/` +
-`Dockerfile`).
+> **⚠️ SUPERSEDED — the worker moved to the `agent-demo-core` monorepo.**
+>
+> The lead-qual worker now lives at `agent-demo-core/agents/lead_qual/` (a uv workspace
+> member) and is deployed from **that** repo's root — **not** from `worker/` here.
+>
+> Why: LiveKit Cloud's remote build has **no build-time credentials**, so a **private
+> git *dependency*** (`fishaudio/agent-demo-core`) cannot be cloned during the build.
+> Hosting the worker next to the core (workspace/path dep) keeps the core *in the build
+> context* instead, so no build-time auth is needed. Deploy with:
+>
+> ```bash
+> cd <agent-demo-core repo root>
+> lk agent deploy --config livekit.lead-qual.toml --secrets AGENT_MODULE=agents.lead_qual.main
+> ```
+>
+> The `worker/` directory here is kept for history only and should not be deployed.
+> See `agent-demo-core/agents/lead_qual/README.md`. The `lk` mechanics below still apply,
+> but run them from the agent-demo-core repo root, not from `worker/`.
 
 ### One-time setup
 
