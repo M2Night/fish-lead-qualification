@@ -11,9 +11,6 @@ The single interface both halves must agree on.
   { "language": "en" }
   ```
   `language` ∈ `en, zh, de, ja, fr, es, ko, ar, ru, pt` (UI dropdown). Default `en`.
-- **Warm-up**: the web may dispatch into a room named **`warmup-<id>`** to wake a cold
-  worker before the user clicks Start. The worker short-circuits these (no pipeline, no
-  cost). See `is_warmup_session`.
 
 ## Qualification data  (worker → web, LiveKit data channel, `topic:"qualification"`)
 

@@ -87,8 +87,15 @@ app.post("/api/session", async (req, res) => {
         : "";
     const language = SUPPORTED_LANGUAGES.has(requested) ? requested : "en";
 
+    // Selected voice id (region × voice matrix). Free-form string; the worker maps
+    // it to a Fish voice_id. The current worker ignores unknown metadata keys, so
+    // this is forward-compatible until the backend adds the per-region voice table.
+    const voice =
+      typeof req.body?.voice === "string" ? req.body.voice.trim().slice(0, 64) : "";
+
     const room = roomName();
-    const metadata = JSON.stringify({ language }); // web → worker session options
+    // web → worker session options; omit `voice` when absent to keep metadata clean.
+    const metadata = JSON.stringify(voice ? { language, voice } : { language });
 
     await dispatchAgent({ livekitUrl, apiKey, apiSecret, room, metadata });
 
@@ -104,23 +111,6 @@ app.post("/api/session", async (req, res) => {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[/api/session]", message);
     res.status(500).json({ error: message });
-  }
-});
-
-// Warm-up: dispatch the agent into a `warmup-<uuid>` room to wake a cold worker
-// before the user clicks Start. No participant token — the dispatch alone wakes
-// the worker, which short-circuits warmup rooms (CONTRACT.md). Never throws.
-app.post("/api/warmup", async (req, res) => {
-  try {
-    const { livekitUrl, apiKey, apiSecret } = requireLiveKitEnv();
-    const room = `warmup-${crypto.randomUUID()}`;
-    const metadata = JSON.stringify({ language: "en" });
-    await dispatchAgent({ livekitUrl, apiKey, apiSecret, room, metadata });
-    res.json({ ok: true });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[/api/warmup]", message);
-    res.json({ ok: false, error: message });
   }
 });
 
