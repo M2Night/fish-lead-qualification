@@ -2,9 +2,8 @@
 
 A small Node + Express app that serves the polished voice-demo page and mints
 LiveKit credentials. The browser talks to **Fish** (the `lead-qual` agent) over
-LiveKit; the page shows a live transcript and a self-filling qualification
-scorecard (use case · authority · volume · timeline), a buying-intent score, and
-a **QUALIFIED** verdict.
+LiveKit; the page shows a live transcript and a language + voice picker. It's a
+**conversation-only** demo — no scorecard.
 
 ## What's here
 
@@ -16,12 +15,13 @@ a **QUALIFIED** verdict.
 
 ## `POST /api/session`
 
-Body: `{ "language": "en" }` (one of `en zh de ja fr es ko ar ru pt`; defaults to
-`en` if absent/invalid).
+Body: `{ "language": "en", "voice": "<32-hex Fish voice_id>" }` (language one of
+`en zh ja`; defaults to `en` if absent/invalid. `voice` is optional — the worker
+validates it as 32-hex and falls back to `FISH_VOICE_ID`).
 
 It mints a participant token (`roomJoin` + `canPublish` + `canSubscribe` +
 `canPublishData`) and dispatches the agent `agent_name="lead-qual"` with
-`metadata = {"language": "<lang>"}` (per `../CONTRACT.md`). Returns:
+`metadata = {"language": "<lang>", "voice": "<fish voice_id>"}` (per `../CONTRACT.md`). Returns:
 
 ```json
 { "livekitUrl": "...", "roomName": "lead-qual-xxxxxxxx", "token": "..." }
@@ -50,11 +50,8 @@ The page loads and animates without keys, but **Start call** needs valid
   `id` so interim text updates in place, agent vs user styling is kept, and the
   newest line types in word-by-word. Emotion markers like `(warm)` / `[whisper]`
   are stripped before display.
-- **Scorecard / score / verdict** come from `RoomEvent.DataReceived`. A frame is
-  treated as qualification only if `topic === "qualification"` **or** parsed
-  `kind === "qualification"`; stale `seq <= lastSeq` frames are ignored; slots are
-  field-adapted (`use_case→useCase`, `authority→role`). `QUALIFIED` glows the card
-  and fires sparkles.
+- **No scorecard / data channel** — the agent is conversation-only and routes
+  verbally; real calls receive no qualification data.
 - **Audio**: the agent's remote audio track (`TrackSubscribed`, kind audio) is
   attached to a hidden `<audio autoplay>`. If the browser blocks autoplay, a
   one-tap **enable audio** button appears (`startAudio()` on a gesture).
@@ -64,6 +61,7 @@ The page loads and animates without keys, but **Start call** needs valid
 
 ## Language dropdown → dispatch
 
-The dropdown's value (the Fish language code) is POSTed to `/api/session` as
-`{ language }`, JSON-stringified into the dispatch metadata, and the worker maps
-it to STT language + Fish voice/locale.
+The selected language + voice are POSTed to `/api/session` as `{ language, voice }`,
+JSON-stringified into the dispatch metadata; the worker maps `language` to the STT
+language + instruction language, and uses `voice` as the Fish TTS voice (fallback
+`FISH_VOICE_ID`).

@@ -1,611 +1,746 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="paper">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Fish Audio · Lead Qualification Demo</title>
+<title>Fish Audio · Realtime Voice Lead Qualification</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<!-- Real LiveKit browser client (replaces the scripted demo). -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Real LiveKit browser client -->
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.7.5/dist/livekit-client.umd.min.js"></script>
 <style>
+  /* ============================================================
+     THEME TOKENS — Paper (light neutral, ElevenLabs-style restraint)
+     ============================================================ */
   :root{
-    --level:0;
-    --ink:#1b1613; --muted:#9a8f81; --line:#ece6dc; --card:#ffffff; --frame:#fbf9f5;
-    --fish1:#a85bb6; --fish2:#d56fa0; --fish3:#b06a4c; --good:#1f9d57;
     --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    --talk: "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, sans-serif;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --r: 8px;                 /* unified small radius */
+    --good:#22c07a; --warn:#e0a23c; --bad:#e5574f;
   }
+  html[data-theme="paper"]{
+    --bg:#f6f6f3; --bg-2:#ffffff; --bg-3:#ffffff; --raise:#fbfbf9;
+    --line:#e7e7e1; --line-2:#dcdcd4;
+    --ink:#15171c; --ink-2:#565c66; --ink-3:#8b909b;
+    --accent:#a63bbd; --accent-2:#c85289; --accent-soft:rgba(166,59,189,.09);
+    --wave-a:#a63bbd; --wave-b:#c85289; --glow:rgba(166,59,189,.10);
+  }
+
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
-  body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;position:relative;
-       background:linear-gradient(180deg,#f7f1f4 0%,#efe9e0 72%);background-attachment:fixed;overflow-x:hidden}
-  body::before,body::after{content:"";position:fixed;border-radius:50%;filter:blur(74px);z-index:-1;pointer-events:none}
-  body::before{width:520px;height:520px;left:-150px;top:-120px;
-       background:radial-gradient(circle,rgba(213,111,160,.18),transparent 70%);animation:drift1 19s ease-in-out infinite alternate}
-  body::after{width:560px;height:560px;right:-180px;bottom:-150px;
-       background:radial-gradient(circle,rgba(168,91,182,.16),transparent 70%);animation:drift2 23s ease-in-out infinite alternate}
-  @keyframes drift1{to{transform:translate(70px,46px)}}
-  @keyframes drift2{to{transform:translate(-54px,-44px)}}
+  body{font-family:var(--sans);background:var(--bg);color:var(--ink);
+       -webkit-font-smoothing:antialiased;overflow:hidden}
+  .app{height:100vh;display:grid;grid-template-rows:auto 1fr auto;gap:0}
 
-  .wrap{max-width:600px;margin:0 auto;padding:20px 22px 40px;min-height:100%;display:flex;flex-direction:column}
-  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-  .brand{display:flex;align-items:center;gap:10px}
-  .brand img{width:26px;height:26px;border-radius:7px;display:block}
-  .brand .nm{font-weight:600;font-size:14.5px;letter-spacing:.2px}
-  .brand .tag{font-size:11px;color:var(--muted);font-family:var(--mono);
-              border-left:1px solid var(--line);padding-left:10px;margin-left:2px}
-  .live{font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
-  .live i{width:7px;height:7px;border-radius:50%;background:#c4bcb0;transition:background .3s}
+  /* ===== header ===== */
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;
+         padding:14px 22px;border-bottom:1px solid var(--line);background:var(--bg-2)}
+  .brand{display:flex;align-items:center;gap:12px;min-width:0}
+  .brand svg{width:30px;height:auto;display:block;flex:none}
+  .brand .txt{display:flex;flex-direction:column;line-height:1.25;min-width:0}
+  .brand .t1{font-weight:700;font-size:14.5px;letter-spacing:.1px}
+  .brand .t2{font-size:11.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hd-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+
+
+  .live{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+  .live i{width:7px;height:7px;border-radius:50%;background:var(--ink-3);transition:.3s}
   .live.on i{background:var(--good);animation:pulse 1.8s infinite}
-  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(31,157,87,.5)}70%{box-shadow:0 0 0 7px rgba(31,157,87,0)}100%{box-shadow:0 0 0 0 rgba(31,157,87,0)}}
+  .live.warn i{background:var(--warn)} .live.err i{background:var(--bad)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,192,122,.5)}70%{box-shadow:0 0 0 6px rgba(34,192,122,0)}100%{box-shadow:0 0 0 0 rgba(34,192,122,0)}}
 
-  /* ===== controls (Start/End + language + states) ===== */
-  .controls{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:2px auto 10px}
-  .btn{font-family:var(--talk);font-weight:600;font-size:13.5px;border:0;border-radius:22px;padding:9px 20px;cursor:pointer;
-       color:#fff;background:linear-gradient(90deg,var(--fish1),var(--fish2));box-shadow:0 6px 18px rgba(213,111,160,.28);
-       transition:transform .15s,opacity .2s,filter .2s}
-  .btn:hover{transform:translateY(-1px)}
-  .btn:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:grayscale(.3)}
-  .btn.end{background:linear-gradient(90deg,#c25a73,#a8475c);box-shadow:0 6px 18px rgba(168,71,92,.26)}
-  .btn.ghost{background:#f2e7ef;color:#a85bb6;box-shadow:none;border:1px solid #eed4e6}
-  .lang{font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--card);
-        border:1px solid var(--line);border-radius:22px;padding:8px 14px;cursor:pointer}
-  .lang:disabled{opacity:.55;cursor:not-allowed}
-  .state{font-family:var(--mono);font-size:11px;letter-spacing:.4px;color:var(--muted);display:flex;align-items:center;gap:7px}
-  .state i{width:8px;height:8px;border-radius:50%;background:#c4bcb0;flex:none}
-  .state.connecting i,.state.cold i{background:#e0a23c;animation:pulse2 1.2s infinite}
-  .state.connected i{background:var(--good)}
-  .state.error i{background:#d3504f}
-  .state.ended i{background:#9a8f81}
-  @keyframes pulse2{50%{opacity:.4}}
+  .btn{font-family:var(--sans);font-weight:600;font-size:13px;border:0;border-radius:var(--r);
+       padding:8px 16px;cursor:pointer;color:#fff;background:var(--accent);transition:.15s;white-space:nowrap}
+  .btn:hover{filter:brightness(1.08)}
+  .btn:disabled{opacity:.4;cursor:not-allowed;filter:none}
+  .btn.end{background:var(--bg-3);color:var(--ink);border:1px solid var(--line-2)}
 
-  /* ===== center voice presence ===== */
-  .hero{display:flex;flex-direction:column;align-items:center;text-align:center}
-  .voicewrap{position:relative;width:300px;height:110px;display:flex;align-items:center;justify-content:center}
-  .sparkles{position:absolute;inset:0;pointer-events:none;z-index:3}
-  .spark{position:absolute;color:#caa6e0;font-size:13px;opacity:0;transform:scale(.4);
-         text-shadow:0 0 6px rgba(150,90,170,.7);animation:twinkle .9s ease-out forwards}
-  @keyframes twinkle{0%{opacity:0;transform:scale(.3) translateY(0)}
-    30%{opacity:1;transform:scale(1.1) translateY(-4px)}100%{opacity:0;transform:scale(.5) translateY(-16px)}}
-  .voice{display:flex;align-items:center;gap:3px;height:26px}
-  .voice i{width:2.5px;min-height:3px;border-radius:2px;background:#a195a8}
+  /* ===== main 3-column cockpit ===== */
+  main{display:grid;grid-template-columns:1fr;
+       background:var(--bg);min-height:0;overflow:hidden}
+  .col{background:var(--bg);min-height:0;display:flex;flex-direction:column;overflow:hidden}
 
-  /* small swimming Fish logo, top-left */
-  .logofish{display:inline-flex;cursor:pointer;transition:transform .3s cubic-bezier(.34,1.6,.5,1)}
-  .logofish:hover{transform:scale(1.08)}
-  .logofish.bounce{animation:bounce .55s}
-  @keyframes bounce{0%{transform:scale(1)}35%{transform:scale(1.1) translateY(-3px)}70%{transform:scale(.98)}100%{transform:scale(1)}}
-  .logofish svg{width:32px;height:auto;display:block;overflow:visible}
+  /* ---- live caption (current turn only, streamed word-by-word) ---- */
+  .caption{margin-top:24px;width:100%;max-width:470px;min-height:80px;
+           display:flex;flex-direction:column;align-items:center;gap:10px;transition:opacity .4s}
+  .caption.empty{opacity:0}
+  .cap-prev{font-family:var(--mono);font-size:11.5px;line-height:1.4;color:var(--ink-3);opacity:.5;
+            max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:15px}
+  .cap-line{display:flex;align-items:baseline;gap:10px;justify-content:center;flex-wrap:wrap;max-width:100%}
+  .cap-who{font-family:var(--mono);font-size:9.5px;letter-spacing:1.6px;text-transform:uppercase;
+           color:var(--ink-3);display:inline-flex;align-items:center;gap:6px;flex:none}
+  .cap-who i{width:6px;height:6px;border-radius:50%;background:var(--ink-3);transition:.25s}
+  .cap-who.you{color:var(--accent-2)} .cap-who.you i{background:var(--accent-2)}
+  .cap-who.agent{color:var(--accent)} .cap-who.agent i{background:var(--accent)}
+  .cap-who.active i{animation:capdot 1.2s infinite}
+  @keyframes capdot{50%{opacity:.35}}
+  .cap-text{font-size:16.5px;line-height:1.5;color:var(--ink);font-weight:500;text-align:left}
+  .cap-text.interim{color:var(--ink-2);font-weight:400}
+  .cap-text .w{display:inline-block}
+  .cap-text .w.reveal{animation:capword .34s ease both}
+  @keyframes capword{from{opacity:0;transform:translateY(.32em)}to{opacity:1;transform:none}}
+  .cap-caret{display:none;width:2px;height:1.05em;background:var(--accent);margin-left:1px;
+             transform:translateY(3px);animation:caret 1s steps(1) infinite}
+  .cap-caret.on{display:inline-block}
+  @keyframes caret{50%{opacity:0}}
 
-  /* ===== transcript ===== */
-  .transcript{position:relative;margin:8px auto 0;max-width:486px;width:100%;height:312px;overflow-y:auto;
-              display:flex;flex-direction:column;gap:12px;padding:12px 22px;border-radius:18px;background:var(--frame);
-              box-shadow:0 14px 34px rgba(120,60,100,.07);scrollbar-width:thin;scrollbar-color:#ecccdf transparent;
-              -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 11%,#000 100%);
-                      mask-image:linear-gradient(180deg,transparent 0,#000 11%,#000 100%)}
-  .transcript::-webkit-scrollbar{width:6px}
-  .transcript::-webkit-scrollbar-thumb{background:#ecccdf;border-radius:6px}
-  .transcript>:first-child{margin-top:auto}
-  .empty{margin:auto;color:#bda2b4;font-family:var(--mono);font-size:12px;letter-spacing:.3px;text-align:center;line-height:1.7}
-  .line{display:flex;flex-direction:column;gap:3px;line-height:1.45}
-  .line.user{align-items:flex-end;text-align:right}
-  .line.agent{align-items:flex-start}
-  .line .who{font-family:var(--mono);font-size:8.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted)}
-  .line.agent .who{color:var(--fish1)}
-  .line .txt{font-family:var(--talk);font-size:13.5px;color:#9b948b;max-width:95%}
-  .line.now .txt{font-size:14px;font-weight:600;color:#1a1410;line-height:1.5;
-                 background:linear-gradient(180deg,rgba(255,210,235,.40),rgba(255,210,235,.16));
-                 padding:6px 12px;border-radius:12px;box-shadow:0 2px 14px rgba(213,111,160,.12)}
-  .line.now .txt .w{display:inline-block;opacity:0;animation:word .34s forwards}
-  @keyframes word{from{opacity:0;transform:translateY(.22em)}to{opacity:1;transform:none}}
-  .line .ann{font-family:var(--mono);font-size:10px;color:#c08fb0;display:none;letter-spacing:.3px}
-  .line.now .ann{display:block;margin-top:4px}
+  /* ---- voice presence (center) ---- */
+  .voice-col{align-items:center;position:relative}
+  .voice-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:20px;position:relative}
+  .voice-body::before{content:"";position:absolute;width:340px;height:340px;border-radius:50%;
+       background:radial-gradient(circle,var(--glow),transparent 68%);filter:blur(30px);
+       opacity:var(--halo,.25);transition:opacity .6s;pointer-events:none}
+  #wave{width:100%;max-width:420px;height:150px;display:block;position:relative}
+  .vstate{margin-top:26px;text-align:center;position:relative}
+  .vstate .lbl{font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--ink-3);transition:color .3s}
+  .vstate.listening .lbl{color:var(--accent-2)}
+  .vstate.thinking .lbl{color:var(--warn)}
+  .vstate.speaking .lbl{color:var(--accent)}
+  .vstate .hint{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:8px;min-height:15px}
+  .thinking-dots i{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--warn);margin:0 2px;
+                   opacity:.3;animation:blink 1.1s infinite}
+  .thinking-dots i:nth-child(2){animation-delay:.18s}.thinking-dots i:nth-child(3){animation-delay:.36s}
+  @keyframes blink{50%{opacity:1}}
+  .audiogate{margin-top:14px;font-size:12px;padding:7px 14px}
+  .audiogate{display:none}.audiogate.show{display:inline-block}
 
-  /* ===== card ===== */
-  .card{margin:16px auto 0;max-width:440px;width:100%;background:var(--card);
-        border:1px solid var(--line);border-radius:15px;padding:4px 18px 12px;
-        box-shadow:0 10px 30px rgba(120,60,100,.06);
-        opacity:.12;transform:translateY(10px);transition:opacity .7s,transform .7s}
-  .card.on{opacity:1;transform:none}
-  .card .hd{font-family:var(--mono);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding:10px 0 3px}
-  .row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid #f1eaef;font-size:13.5px}
-  .row .k{color:#6b6258;font-weight:500}
-  .row .v{font-family:var(--mono);font-size:12px;color:#bca9b8}
-  .row.done .v{color:#2c2722}.row.done .k{color:#1a1714}
-  .row .tk{color:var(--good);margin-left:7px;opacity:0;transition:.3s}
-  .row.done .tk{opacity:1}
-  .badges{margin:6px 0 2px;min-height:14px}
-  .badge{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:20px;
-         background:#f7ecf3;color:#a85bb6;border:1px solid #eed4e6;margin:5px 5px 0 0}
+  /* ---- region × voice picker ---- */
+  .picker{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:30px;transition:opacity .25s}
+  .picker.locked{opacity:.5;pointer-events:none}
+  .region{position:relative}
+  .region-btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--sans);font-size:13px;font-weight:500;
+              color:var(--ink);background:var(--bg-2);border:1px solid var(--line);border-radius:22px;
+              padding:8px 15px;cursor:pointer;transition:.15s}
+  .region-btn:hover{border-color:var(--line-2)}
+  .region-btn .flag{font-size:16px;line-height:1}
+  .region-btn .car{color:var(--ink-3);font-size:10px}
+  .region-menu{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:30;
+               background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r);padding:6px;min-width:234px;
+               box-shadow:0 16px 40px rgba(80,40,70,.14);display:none;max-height:300px;overflow:auto;scrollbar-width:thin}
+  .region-menu.open{display:block}
+  .region-menu button{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;
+                      font-family:var(--sans);font-size:13px;color:var(--ink);background:none;border:0;border-radius:6px;
+                      padding:8px 10px;cursor:pointer}
+  .region-menu button:hover{background:var(--accent-soft)}
+  .region-menu button.on{color:var(--accent);font-weight:600}
+  .region-menu .rflag{font-size:15px}
+  .region-menu .sub{margin-left:auto;color:var(--ink-3);font-family:var(--mono);font-size:11px}
+  .pick-hint{font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-3)}
+  .voices{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+  .vchip{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;width:114px;padding:12px 10px;
+         background:var(--bg-2);border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:.18s}
+  .vchip:hover{transform:translateY(-2px);box-shadow:0 8px 22px -12px var(--vc)}
+  .vchip.on{border-color:var(--vc);box-shadow:0 0 0 1px var(--vc) inset,0 10px 24px -12px var(--vc)}
+  .vava{width:56px;height:56px;border-radius:50%;background:var(--vcs);display:flex;align-items:center;justify-content:center;transition:.2s}
+  .vava svg{width:30px;height:30px;color:var(--vc)}
+  .vchip:hover .vava{box-shadow:0 0 0 4px var(--vcs)}
+  .vchip.on .vava{animation:vring 1.7s ease-out infinite}
+  @keyframes vring{0%{box-shadow:0 0 0 0 var(--vcs)}70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  .vchip .vn{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--ink)}
+  .vchip.on .vn{color:var(--vc)}
+  .vchip .vt{font-family:var(--mono);font-size:9px;letter-spacing:.5px;color:var(--ink-3)}
+  .vchip .go{font-family:var(--mono);font-size:9px;letter-spacing:.6px;color:var(--vc);min-height:12px;opacity:0;transition:.2s}
+  .vchip:hover .go,.vchip.on .go{opacity:1}
+  /* absolute so showing/hiding it never reflows the centred hero (cards stay put) */
+  .hangup{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:5;display:none;
+          font-family:var(--sans);font-weight:600;font-size:12.5px;color:#fff;
+          background:var(--bad);border:0;border-radius:22px;padding:8px 20px;cursor:pointer;transition:.15s}
+  .hangup.show{display:block} .hangup:hover{filter:brightness(1.06)}
 
-  /* routing PATH badge — reflects `path` (CONTRACT.md) */
-  .pathwrap{margin-top:12px;text-align:center;min-height:30px}
-  .pathbadge{display:inline-block;font-family:var(--talk);font-weight:600;font-size:13px;letter-spacing:.3px;
-             padding:6px 15px;border-radius:20px;border:1px solid transparent;
-             opacity:0;transform:translateY(4px);transition:.45s}
-  .pathbadge.on{opacity:1;transform:none;animation:stamp .55s cubic-bezier(.2,1.5,.4,1)}
-  .pathbadge.needs{background:#f0ece6;color:#8a8076;border-color:#e4ddd2}
-  .pathbadge.self{background:#e8f0fb;color:#3b6fb0;border-color:#d2e2f5}
-  .pathbadge.cloud{background:#e6f6ec;color:var(--good);border-color:#c6ebd3;text-shadow:0 0 16px rgba(31,157,87,.25)}
-  .pathbadge.onprem{background:#f1ebf8;color:#7a4fb0;border-color:#e0d2f0;text-shadow:0 0 16px rgba(122,79,176,.25)}
-  @keyframes stamp{0%{opacity:0;transform:scale(1.35) rotate(-4deg)}60%{opacity:1;transform:scale(.97) rotate(0)}100%{transform:scale(1)}}
-  .reason{font-family:var(--mono);font-size:12px;color:#bda2b4;margin-top:8px;min-height:16px;text-align:center}
+  /* ===== telemetry footer ===== */
+  footer{border-top:1px solid var(--line);background:var(--bg-2);padding:11px 22px;
+         display:flex;align-items:center;gap:22px;flex-wrap:wrap;overflow-x:auto}
+  .pipe{display:flex;align-items:center;gap:6px;min-width:0}
+  .node{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--ink-3);
+        padding:5px 10px;border:1px solid var(--line);border-radius:20px;background:var(--bg-3);transition:.25s;white-space:nowrap}
+  .node i{width:6px;height:6px;border-radius:50%;background:var(--ink-3);transition:.25s;flex:none}
+  .node.on{color:var(--ink);border-color:var(--accent)} .node.on i{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .arrow{color:var(--ink-3);font-size:11px;flex:none}
+  .metrics{display:flex;gap:20px;margin-left:auto;flex-wrap:wrap}
+  .metric{display:flex;flex-direction:column;gap:1px;min-width:64px}
+  .metric .m-k{font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--ink-3)}
+  .metric .m-v{font-family:var(--mono);font-size:14px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+  .metric .m-v.dim{color:var(--ink-3)}
 
-  /* strong-lead celebration — card glows green once */
-  .card.win{animation:cardglow 2.8s ease-in-out}
-  @keyframes cardglow{
-    0%{box-shadow:0 0 0 0 rgba(31,157,87,0),0 10px 30px rgba(120,60,100,.06)}
-    38%{box-shadow:0 0 0 3px rgba(31,157,87,.22),0 12px 36px rgba(31,157,87,.15)}
-    100%{box-shadow:0 0 0 0 rgba(31,157,87,0),0 10px 30px rgba(120,60,100,.06)}}
-
-  @keyframes rise{to{opacity:1;transform:none}}
-
-  .audiogate{display:none;margin:0 auto 8px}
-  .audiogate.show{display:block}
-  .errbar{display:none;margin:6px auto 0;max-width:486px;font-family:var(--mono);font-size:11.5px;
-          color:#a8475c;background:#fbeef0;border:1px solid #f0d3d8;border-radius:12px;padding:8px 12px;text-align:center}
+  .errbar{display:none;position:fixed;bottom:74px;left:50%;transform:translateX(-50%);z-index:20;
+          font-family:var(--mono);font-size:11.5px;color:#fff;background:var(--bad);
+          border-radius:var(--r);padding:9px 16px;box-shadow:0 8px 30px rgba(0,0,0,.3)}
   .errbar.show{display:block}
+
+  /* ===== responsive: stack, still professional (no phone-chat frame) ===== */
+  @media(max-width:940px){
+    body{overflow:auto}
+    .app{height:auto;min-height:100vh}
+    main{grid-template-columns:1fr;grid-auto-rows:min-content}
+    .col{max-height:none}
+    header{flex-wrap:wrap}
+  }
 </style>
 </head>
 <body>
-<!-- hidden sink for the agent's remote audio track -->
 <audio id="agentAudio" autoplay></audio>
 
-<div class="wrap">
-  <div class="top">
+<div class="app">
+  <!-- ===================== HEADER ===================== -->
+  <header>
     <div class="brand">
-      <span class="logofish" id="fish"><svg id="fishsvg" viewBox="30 168 452 160" xmlns="http://www.w3.org/2000/svg"></svg></span>
-      <span class="nm">Fish Audio</span><span class="tag">Lead Qualification</span>
+      <svg id="fishsvg" viewBox="30 168 452 160" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="txt">
+        <span class="t1">Realtime Voice Lead Qualification</span>
+        <span class="t2">A live demo of Fish Audio's realtime voice — talk to a sales agent in your language and voice</span>
+      </div>
     </div>
-    <div class="live" id="live"><i></i> <span id="liveLabel">idle</span></div>
-  </div>
-
-  <div class="controls">
-    <button class="btn" id="startBtn">Start call</button>
-    <button class="btn end" id="endBtn" disabled>End call</button>
-    <select class="lang" id="lang" title="Conversation language">
-      <option value="en">🇺🇸 English</option>
-      <option value="zh">🇨🇳 汉语</option>
-      <option value="de">🇩🇪 Deutsch</option>
-      <option value="ja">🇯🇵 日本語</option>
-      <option value="fr">🇫🇷 Français</option>
-      <option value="es">🇪🇸 Español</option>
-      <option value="ko">🇰🇷 한국어</option>
-      <option value="ar">🇸🇦 العربية</option>
-      <option value="ru">🇷🇺 Русский</option>
-      <option value="pt">🇵🇹 Português</option>
-    </select>
-    <span class="state" id="state"><i></i><span id="stateLabel">idle</span></span>
-  </div>
-  <button class="btn ghost audiogate" id="audioGate">🔊 Tap to enable audio</button>
-
-  <div class="hero">
-    <div class="voicewrap">
-      <div class="sparkles" id="sparkles"></div>
-      <div class="voice" id="voice"></div>
+    <div class="hd-right">
+      <span class="live" id="live"><i></i><span id="liveLabel">idle</span></span>
     </div>
+  </header>
 
-    <div class="errbar" id="errbar"></div>
-    <div class="transcript" id="transcript"></div>
+  <!-- ===================== MAIN ===================== -->
+  <main>
+    <!-- voice-forward hero -->
+    <div class="col voice-col">
+      <div class="voice-body">
 
-    <div class="card" id="card">
-      <div class="hd">Qualification</div>
-      <div id="slots"></div>
-      <div class="badges" id="badges"></div>
-      <div class="pathwrap"><span class="pathbadge" id="pathBadge"></span></div>
-      <div class="reason" id="reason"></div>
+        <!-- region × voice picker — click a voice to START; click another to SWITCH -->
+        <div class="picker" id="picker">
+          <div class="region">
+            <button class="region-btn" id="regionBtn" title="Region · language">
+              <span class="flag" id="regionFlag">🇺🇸</span>
+              <span id="regionLabel">United States · English</span><span class="car">▾</span>
+            </button>
+            <div class="region-menu" id="regionMenu"></div>
+          </div>
+          <div class="pick-hint" id="pickHint">Pick a voice to start</div>
+          <div class="voices" id="voices"></div>
+          <button class="hangup" id="endCall">■ End call</button>
+        </div>
+
+        <canvas id="wave"></canvas>
+        <div class="vstate" id="vstate">
+          <div class="lbl" id="vlabel">Idle</div>
+          <div class="hint" id="vhint">Start the demo and speak to the agent</div>
+        </div>
+
+        <!-- live caption: current turn only, streamed word-by-word -->
+        <div class="caption empty" id="caption">
+          <div class="cap-prev" id="capPrev"></div>
+          <div class="cap-line" id="capLine">
+            <span class="cap-who" id="capWho"><i></i><span>—</span></span>
+            <span class="cap-text" id="capText"></span><span class="cap-caret" id="capCaret"></span>
+          </div>
+        </div>
+
+        <button class="btn end audiogate" id="audioGate">Enable audio output</button>
+      </div>
     </div>
-  </div>
+  </main>
+
+  <!-- ===================== TELEMETRY ===================== -->
+  <footer>
+    <div class="pipe" id="pipe">
+      <span class="node" data-node="mic"><i></i>Mic</span><span class="arrow">→</span>
+      <span class="node" data-node="stt"><i></i>STT</span><span class="arrow">→</span>
+      <span class="node" data-node="llm"><i></i>Reasoning</span><span class="arrow">→</span>
+      <span class="node" data-node="tts"><i></i>Fish TTS</span>
+    </div>
+    <div class="metrics">
+      <div class="metric"><span class="m-k">Response</span><span class="m-v dim" id="mLatency">—</span></div>
+      <div class="metric"><span class="m-k">First token</span><span class="m-v dim" id="mTtft">—</span></div>
+      <div class="metric"><span class="m-k">Barge-in</span><span class="m-v dim" id="mBarge">—</span></div>
+      <div class="metric"><span class="m-k">Audio</span><span class="m-v dim" id="mAudio">—</span></div>
+    </div>
+  </footer>
 </div>
 
+<div class="errbar" id="errbar"></div>
+
 <script>
-const LK = window.LivekitClient || window.LiveKitClient; // UMD global
-const { Room, RoomEvent, Track, DisconnectReason } = LK;
-
-/* 6 slots — keys match the worker's `slots` object verbatim (CONTRACT.md). */
-const SLOTS=[
-  {k:'use_case',         label:'Use case'},
-  {k:'real_time',        label:'Real-time'},
-  {k:'volume',           label:'Volume'},
-  {k:'current_provider', label:'Current provider'},
-  {k:'priority',         label:'Priority'},
-  {k:'timeline',         label:'Timeline'},
-];
-
-/* routing PATH badge config (CONTRACT.md). */
-const PATHS={
-  'needs-more-info':  {cls:'needs',  label:'Assessing'},
-  'self-serve':       {cls:'self',   label:'Developer Console'},
-  'cloud-enterprise': {cls:'cloud',  label:'Enterprise fit'},
-  'on-prem':          {cls:'onprem', label:'On-prem / VPC'},
-};
-
+const LK = window.LivekitClient || window.LiveKitClient;
+const { Room, RoomEvent, DisconnectReason } = LK;
 const $=s=>document.querySelector(s);
 
-/* ============================================================
-   Fish logo + center voice meter (unchanged from the visual shell)
-   ============================================================ */
-const INK='#16120f', GRY='#7a7a7a';
+/* ---- Fish logo (static, brand mark only — no bounce/animation) ---- */
 const BARS=[
-  {x:297.1,y:299.3,h:21.4,f:GRY,a:-29.3,e:-0.25,d:0.093},{x:456.7,y:249.9,h:27.1,f:GRY,a:0,e:0,d:0.150},
-  {x:424.7,y:256.6,h:47.4,f:GRY,a:-0.05,e:0,d:0.139},   {x:392.9,y:264.3,h:52.1,f:GRY,a:-32.7,e:-0.25,d:0.127},
-  {x:360.9,y:270.7,h:51.6,f:GRY,a:-31.6,e:-0.25,d:0.116},{x:328.9,y:276.4,h:46,f:GRY,a:-30.4,e:-0.25,d:0.104},
-  {x:38.1,y:200,h:19.4,f:INK,a:180,e:0.1,d:0},          {x:71,y:202.7,h:30.7,f:INK,a:100,e:0.3,d:0.012},
-  {x:103.9,y:198.4,h:77.4,f:INK,a:85,e:0,d:0.024},      {x:136.9,y:192,h:20,f:INK,a:240,e:0.035,d:0},
-  {x:136.9,y:245.4,h:58.3,f:INK,a:-40,e:-0.3,d:0.035},  {x:168.6,y:235.1,h:100.8,f:INK,a:-40,e:0,d:0.047},
-  {x:200.6,y:222.4,h:102.2,f:INK,a:-25.8,e:-0.25,d:0.058},{x:232.6,y:204.1,h:115.8,f:INK,a:-27,e:-0.25,d:0.070},
-  {x:264.5,y:190.2,h:120.1,f:INK,a:-28.1,e:-0.25,d:0.081},{x:297.1,y:181.9,h:107.1,f:INK,a:-29.3,e:-0.25,d:0.093},
-  {x:328.9,y:177,h:87.8,f:INK,a:-30.4,e:-0.25,d:0.104}, {x:392.9,y:178.1,h:75.4,f:INK,a:-32.7,e:-0.25,d:0.127},
-  {x:360.9,y:175,h:86.6,f:INK,a:-31.6,e:-0.25,d:0.116}, {x:424.7,y:185.2,h:60.2,f:INK,a:-0.05,e:0,d:0.139},
-  {x:456.7,y:204.1,h:38,f:INK,a:0,e:0,d:0.150},
+  {x:38.1,y:200,h:19.4},{x:71,y:202.7,h:30.7},{x:103.9,y:198.4,h:77.4},{x:136.9,y:192,h:20},
+  {x:136.9,y:245.4,h:58.3},{x:168.6,y:235.1,h:100.8},{x:200.6,y:222.4,h:102.2},{x:232.6,y:204.1,h:115.8},
+  {x:264.5,y:190.2,h:120.1},{x:297.1,y:181.9,h:107.1},{x:328.9,y:177,h:87.8},{x:360.9,y:175,h:86.6},
+  {x:392.9,y:178.1,h:75.4},{x:424.7,y:185.2,h:60.2},{x:456.7,y:204.1,h:38},
 ];
-let FBE=[];
-function buildFish(){
-  $('#fishsvg').innerHTML=BARS.map((b,i)=>
-    `<rect id="fb${i}" x="${b.x}" y="${b.y}" width="16" height="${b.h}" rx="8" fill="${b.f}"/>`).join('');
-  FBE=BARS.map((_,i)=>document.getElementById('fb'+i));
-}
-const VN=22; let VBE=[];
-function buildVoice(){
-  $('#voice').innerHTML=Array.from({length:VN},()=>'<i></i>').join('');
-  VBE=[...document.querySelectorAll('#voice i')];
-}
+$('#fishsvg').innerHTML=BARS.map(b=>
+  `<rect x="${b.x}" y="${b.y}" width="16" height="${b.h}" rx="8" fill="currentColor"/>`).join('');
+$('#fishsvg').style.color='var(--ink)';
 
-function words(t){return t.split(' ').map((w,i)=>`<span class="w" style="animation-delay:${i*55}ms">${w}&nbsp;</span>`).join('');}
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
-/* Strip free-form emotion / delivery cues from transcript text per CONTRACT.md
-   so `[warm]`, `[thoughtful, slightly amused]`, `[break]` never render as words.
-   Transcript display ONLY — never applied to data-channel payloads. */
-function stripEmotion(text){
-  return (text||'').replace(/\[[^\]\n]{0,40}\]/g, "").replace(/\s{2,}/g," ").trim();
-}
-
-function spark(n,cx,cy,spread){
-  const box=$('#sparkles'); const W=box.clientWidth||300, H=box.clientHeight||200;
-  cx=cx??W/2; cy=cy??H/2; spread=spread??70;
-  for(let i=0;i<n;i++){const s=document.createElement('span');s.className='spark';
-    s.textContent=Math.random()<.5?'✦':'✧';
-    s.style.left=(cx+(Math.random()-.5)*spread)+'px';
-    s.style.top=(cy+(Math.random()-.5)*spread)+'px';
-    s.style.fontSize=(9+Math.random()*9)+'px';
-    s.style.animationDelay=(Math.random()*.2)+'s';
-    box.appendChild(s); setTimeout(()=>s.remove(),1200);}
-}
+/* strip agent emotion cues per CONTRACT.md (display only) */
+function stripEmotion(t){return (t||'').replace(/\[[^\]\n]{0,40}\]/g,"").replace(/\s{2,}/g," ").trim();}
 
 /* ============================================================
-   Live call state — replaces the scripted STEPS/play() entirely.
+   Language × voice matrix — 3 languages, 3 real Fish voices each. `id` is the
+   Fish voice_id the worker uses as tts_voice (sent in dispatch metadata as
+   `voice`); name + hue are display-only — edit freely.
    ============================================================ */
-let transcriptLines=[];   // [{who:'agent'|'user', text, key, final}]
-let speakingT=0;          // last time the agent was speaking (drives swim + stars)
-let callActive=false;     // true between connect and disconnect
-let celebrated=false;     // strong-lead celebration fired once per call
+const REGIONS={
+  en:{country:'United States', lang:'English',   flag:'🇺🇸'},
+  zh:{country:'中国',          lang:'Chinese',    flag:'🇨🇳'},
+  ja:{country:'日本',          lang:'Japanese',   flag:'🇯🇵'},
+};
+// Shared display set — same 3 names across every language. Fish-themed; edit freely.
+const VOICE_STYLES=[
+  {name:'Koi',    hue:'#a63bbd'},
+  {name:'Finn',   hue:'#2f9e8f'},
+  {name:'Marlin', hue:'#c07b2f'},
+];
+// Real Fish voice_id per (language, slot) — index matches VOICE_STYLES above.
+const VOICE_IDS={
+  en:['933563129e564b19a115bedd57b7406a','ca3007f96ae7499ab87d27ea3599956a','536d3a5e000945adb7038665781a4aca'],
+  zh:['7f92f8afb8ec43bf81429cc1c9199cb1','59cb5986671546eaa6ca8ae6f29f6d22','df3004dbc79447539329bb215fd2cbcc'],
+  ja:['5161d41404314212af1254556477c17d','4da3f8598f874e47a55eb887783575f7','63bc41e652214372b15d9416a30a60b4'],
+};
+function voicesFor(lang){ const ids=VOICE_IDS[lang]||VOICE_IDS.en; return VOICE_STYLES.map((s,i)=>({...s,id:ids[i]})); }
+function voiceId(lang,idx){ return (VOICE_IDS[lang]||VOICE_IDS.en)[idx]; }
 
-function resetVisuals(){
-  transcriptLines=[]; speakingT=0; celebrated=false;
-  buildFish(); buildVoice();
-  $('#slots').innerHTML=SLOTS.map(s=>
-    `<div class="row" data-row="${s.k}"><span class="k">${s.label}</span><span><span class="v">probing…</span><span class="tk">✓</span></span></div>`).join('');
-  $('#badges').innerHTML='';
-  $('#reason').innerHTML='';
-  $('#pathBadge').className='pathbadge'; $('#pathBadge').textContent='';
-  $('#card').classList.remove('on','win');
-  renderTranscript();
-}
+let selLang='en', selVoice=0, switching=false, starting=false, pickerLocked=false;
 
-function emptyHint(html){ $('#transcript').innerHTML=`<div class="empty">${html}</div>`; }
-
-function renderTranscript(){
-  if(transcriptLines.length===0){
-    emptyHint(callActive
-      ? 'Listening… say hello to Fish 🐟'
-      : 'Press <b>Start call</b> and talk to Fish.');
-    return;
-  }
-  const n=transcriptLines.length;
-  $('#transcript').innerHTML=transcriptLines.map((s,j)=>{
-    const now=(j===n-1), age=n-1-j, op=now?1:Math.max(0.42,0.8-age*0.07);
-    const who=s.who==='agent'?'Fish':'You';
-    // One line per continuous speaker run — join the segments it accumulated. Real
-    // transcription already streams word-by-word, so plain text (no per-word reveal).
-    const body=esc(s.order.map(k=>s.parts[k]).join(' '));
-    return `<div class="line ${s.who}${now?' now':''}" style="opacity:${op.toFixed(2)}"><span class="who">${who}</span><span class="txt">${body}</span></div>`;
+/* operator / headset glyph — reads as "a support voice you can call" */
+const OP_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="2.5" y="12.5" width="4.5" height="7" rx="2.2"/><rect x="17" y="12.5" width="4.5" height="7" rx="2.2"/><path d="M20 19.5v.5a3 3 0 0 1-3 3h-3"/></svg>';
+function renderPicker(){
+  const cur=REGIONS[selLang];
+  $('#regionFlag').textContent=cur.flag;
+  $('#regionLabel').textContent=`${cur.country} · ${cur.lang}`;
+  $('#pickHint').textContent = callActive ? 'Live · tap another agent to switch' : 'Pick an agent voice to start the call';
+  $('#voices').innerHTML=voicesFor(selLang).map((v,i)=>{
+    const on=i===selVoice, go = (callActive&&on) ? '● on call' : (callActive ? 'switch' : 'Call');
+    return `<button class="vchip${on?' on':''}" data-vi="${i}" style="--vc:${v.hue};--vcs:${v.hue}22" title="${v.name}">`
+      +`<span class="vava">${OP_SVG}</span><span class="vn">${v.name}</span><span class="go">${go}</span></button>`;
   }).join('');
-  const tr=$('#transcript'); tr.scrollTop=tr.scrollHeight;
+  $('#regionMenu').innerHTML=Object.entries(REGIONS).map(([code,v])=>
+    `<button data-rc="${code}" class="${code===selLang?'on':''}"><span class="rflag">${v.flag}</span><span>${v.country}</span><span class="sub">${v.lang}</span></button>`).join('');
+  applyPickerLock();   // re-apply disabled state to freshly-rendered buttons
 }
+/* real disable (not just pointer-events) so keyboard users can't fire it either */
+function applyPickerLock(){ const rb=$('#regionBtn'); if(rb) rb.disabled=pickerLocked;
+  document.querySelectorAll('.vchip').forEach(b=>{ b.disabled=pickerLocked; }); }
+function lockPicker(v){ pickerLocked=v; $('#picker').classList.toggle('locked',v); applyPickerLock(); }
 
-/* Upsert a transcript segment. Interim→final updates land in place by key. A new
-   segment from the SAME speaker as the last line is merged into that line (so a single
-   utterance the turn-detector split on a pause shows as one bubble, not two). */
-function upsertLine(who, key, text, final){
-  const clean=stripEmotion(text);
-  let line=transcriptLines.find(l=>l.parts && (key in l.parts));
-  if(!clean){
-    if(line){
-      delete line.parts[key]; line.order=line.order.filter(k=>k!==key);
-      if(line.order.length===0){ const i=transcriptLines.indexOf(line); if(i>=0) transcriptLines.splice(i,1); }
-      renderTranscript();
-    }
-    return;
-  }
-  if(line){ line.parts[key]=clean; line.who=who; line.ts=Date.now(); }
-  else {
-    const last=transcriptLines[transcriptLines.length-1];
-    // merge into the previous line only if it's the same speaker AND recent (a single
-    // utterance the turn-detector split on a pause); otherwise it's a new turn.
-    if(last && last.who===who && (Date.now()-(last.ts||0))<6000){ line=last; }
-    else { line={who, parts:{}, order:[], ts:Date.now()}; transcriptLines.push(line); }
-    if(!(key in line.parts)) line.order.push(key);
-    line.parts[key]=clean; line.ts=Date.now();
-  }
-  renderTranscript();
+/* click a voice = START (idle) or SWITCH (in call). No separate Start button. */
+function clickVoice(i){
+  if(starting||switching)return;   // ignore taps/Enter while dialing or switching
+  if(callActive){ if(i===selVoice)return; selVoice=i; renderPicker(); reconnect(); }
+  else{ selVoice=i; renderPicker(); startCall(); }
 }
+function selectRegion(code){ if(starting||switching){ $('#regionMenu').classList.remove('open'); return; }
+  if(!REGIONS[code]||code===selLang){ $('#regionMenu').classList.remove('open'); return; }
+  selLang=code; selVoice=0; renderPicker(); $('#regionMenu').classList.remove('open'); if(callActive) reconnect(); }
 
-/* Apply a qualification snapshot from the worker's data channel (CONTRACT.md).
-   Fields map straight through — slots keyed by name, signals → badges,
-   path → routing badge, reason → line under it. No numeric score now. */
-function applyQualification(q){
-  $('#card').classList.add('on');
-
-  const slots=q.slots||{};
-  for(const s of SLOTS){
-    const val=slots[s.k];
-    if(val!=null && val!==''){
-      const row=document.querySelector(`#slots [data-row="${s.k}"]`);
-      if(row){ row.classList.add('done'); row.querySelector('.v').textContent=val; }
-    }
-  }
-
-  if(Array.isArray(q.signals))
-    $('#badges').innerHTML=q.signals.map(s=>`<span class="badge">${esc(s)}</span>`).join('');
-
-  const cfg=PATHS[q.path];
-  if(cfg){
-    const pb=$('#pathBadge');
-    pb.className='pathbadge on '+cfg.cls;
-    pb.textContent=cfg.label;
-  }
-
-  if(typeof q.reason==='string' && q.reason) $('#reason').innerHTML=`▸ ${esc(q.reason)}`;
-
-  // Strong-lead "win" moment — once per call.
-  if((q.path==='cloud-enterprise' || q.path==='on-prem') && !celebrated){
-    celebrated=true;
-    $('#card').classList.add('win');
-    spark(8,150,55,130);
-  }
+/* v1 switch = fast reconnect with the new {language, voice} dispatch metadata */
+async function reconnect(){
+  if(switching)return; switching=true;
+  setState('connecting','switching…'); lockPicker(true);
+  endedByUser=true;
+  try{ if(room) await room.disconnect(); }catch{}
+  teardown();
+  switching=false;
+  startCall();
 }
-
-/* breathing + speaking ripples + ambient sparkle — driven by `speakingT`
-   which is now set from real agent speaking state (not a fake step clock). */
-let lastAmbient=0;
-function loop(now){
-  const active=callActive && (now-speakingT)/1000<1.0; const t=now/1000;
-  const T=active?1.1:1.5, w=2*Math.PI/T;
-  for(let i=0;i<BARS.length;i++){const b=BARS[i], r=FBE[i]; if(!r)continue;
-    const osc=(1-Math.cos(w*(t-b.d)))/2;
-    const dy=b.a*0.6*osc;
-    const h=Math.max(4,b.h+b.a*b.e*osc);
-    r.setAttribute('transform',`translate(0 ${dy.toFixed(1)})`);
-    r.setAttribute('height',h.toFixed(1));
-  }
-  for(let k=0;k<VBE.length;k++){
-    const o=Math.abs(Math.sin(t*(active?2.0:0.6)+k*0.35));
-    VBE[k].style.height=Math.max(3,active?5+o*15:4+o*4).toFixed(1)+'px';}
-  if(active && now-lastAmbient>165){lastAmbient=now; spark(1,150,55,100);}
-  requestAnimationFrame(loop);
-}
-
-// hover interaction on the fish — bounce
-const fish=$('#fish');
-fish.addEventListener('mouseenter',()=>{fish.classList.remove('bounce');void fish.offsetWidth;fish.classList.add('bounce');});
 
 /* ============================================================
-   Connection state machine + LiveKit wiring
+   Call + UI state
+   ============================================================ */
+let room=null, callActive=false;
+
+function resetUI(){
+  document.querySelectorAll('.node').forEach(n=>n.className='node');
+  resetCaption();
+}
+
+/* ============================================================
+   Live caption — current turn only, streamed word-by-word.
+   Visualizes the STT interim→final pipeline: interim text is dim
+   with a blinking caret; on finalize it locks in. Reuses CONTRACT.md
+   emotion-cue stripping. DOM stays tiny (a few word spans).
+   ============================================================ */
+let capRun=null;                 // {who, ids:[], text:{}, finals:{}}
+let capPrev={who:'',text:''};    // last completed line (context)
+let capShown=0;                  // words already revealed in current run
+function joinRun(r){ return r.ids.map(i=>r.text[i]).join(' ').replace(/\s{2,}/g,' ').trim(); }
+function runInterim(r){ return r.ids.some(i=>!r.finals[i]); }
+
+function pushSeg(who,id,text,final){
+  const clean=stripEmotion(text);
+  if(!capRun || capRun.who!==who){
+    if(capRun && joinRun(capRun)) capPrev={who:capRun.who, text:joinRun(capRun)};
+    capRun={who, ids:[], text:{}, finals:{}}; capShown=0;
+  }
+  if(!clean){
+    if(id in capRun.text){ delete capRun.text[id]; delete capRun.finals[id]; capRun.ids=capRun.ids.filter(x=>x!==id); }
+  }else{
+    if(!(id in capRun.text)) capRun.ids.push(id);
+    capRun.text[id]=clean; capRun.finals[id]=(final!==false);
+  }
+  renderCaption();
+}
+
+function renderCaption(){
+  const cap=$('#caption');
+  if(!capRun && !capPrev.text){ cap.className='caption empty'; return; }
+  cap.className='caption';
+  $('#capPrev').textContent = capPrev.text ? (capPrev.who==='agent'?'Agent · ':'You · ')+capPrev.text : '';
+  const whoEl=$('#capWho'), textEl=$('#capText');
+  if(!capRun){ whoEl.className='cap-who'; whoEl.querySelector('span').textContent='—';
+    textEl.className='cap-text'; textEl.innerHTML=''; $('#capCaret').className='cap-caret'; return; }
+  const who=capRun.who, interim=runInterim(capRun);
+  whoEl.className='cap-who '+(who==='agent'?'agent':'you')+(interim?' active':'');
+  whoEl.querySelector('span').textContent = who==='agent'?'Agent':'You';
+  const words=joinRun(capRun).split(' ').filter(Boolean);
+  textEl.className='cap-text'+(interim?' interim':'');
+  textEl.innerHTML=words.map((w,i)=>`<span class="w${i>=capShown?' reveal':''}">${esc(w)}</span>`).join(' ');
+  capShown=words.length;
+  $('#capCaret').className='cap-caret'+(interim?' on':'');
+}
+
+function resetCaption(){ capRun=null; capPrev={who:'',text:''}; capShown=0; renderCaption(); }
+
+/* Legacy scripted-demo hook only — real calls receive no qualification data (the agent
+   is conversation-only: it routes verbally, no scorecard / data channel). No UI. */
+function applyQualification(_q){ /* intentionally no UI */ }
+
+/* ============================================================
+   Telemetry — pipeline nodes + REAL frontend-measurable metrics only
+   ============================================================ */
+function setNode(name,cls){const n=$(`.node[data-node="${name}"]`); if(n)n.className='node'+(cls?' '+cls:'');}
+let flashTimers={};
+function flashNode(name){const n=$(`.node[data-node="${name}"]`); if(!n)return;
+  n.classList.add('on'); clearTimeout(flashTimers[name]);
+  flashTimers[name]=setTimeout(()=>n.classList.remove('on'),700);}
+
+let tUserDone=0, awaitingAgent=false, ttftShown=false, respShown=false;
+let bargeArmed=false, tBarge=0, quietFrames=0;   // interruption (barge-in) capture
+function fmtMs(ms){return ms>=1000?(ms/1000).toFixed(2)+'s':Math.round(ms)+'ms';}
+function setMetric(id,val,dim){const e=$('#'+id); if(e){ e.textContent=val; e.classList.toggle('dim',!!dim); }}
+function resetMetrics(){ ['mLatency','mTtft','mBarge','mAudio'].forEach(id=>setMetric(id,'—',true)); }
+
+/* ============================================================
+   Real audio-reactive waveform (Web Audio AnalyserNode on real tracks)
+   ============================================================ */
+let audioCtx=null, micAnalyser=null, agentAnalyser=null, micData=null, agentData=null;
+let micStream=null, micSrc=null, agentSrc=null;   // kept so teardown can fully release them
+let demoMode=false, demoAmp=0;   // scripted ?demo preview (visual only)
+const cvs=$('#wave'), cx=cvs.getContext('2d');
+function ensureCtx(){ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
+/* short synthesized "connected" chime (no asset) — a quick rising two-note ping */
+function playJoinSound(){
+  try{
+    const ctx=ensureCtx(); if(ctx.state==='suspended') ctx.resume();
+    const t0=ctx.currentTime;
+    [[659.25,0],[987.77,0.10]].forEach(([f,dt])=>{           // E5 → B5
+      const o=ctx.createOscillator(), g=ctx.createGain();
+      o.type='sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(0.0001,t0+dt);
+      g.gain.exponentialRampToValueAtTime(0.13,t0+dt+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+dt+0.30);
+      o.connect(g).connect(ctx.destination);
+      o.start(t0+dt); o.stop(t0+dt+0.32);
+    });
+  }catch{}
+}
+/* soft ringback while connecting — a gentle repeating "ring" (440+480Hz pair),
+   started on dial and stopped the instant the agent connects (real-call feel) */
+let ringTimer=null;
+function ringBeep(){
+  try{
+    const ctx=ensureCtx(); const t0=ctx.currentTime;
+    const g=ctx.createGain(); g.connect(ctx.destination);
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.exponentialRampToValueAtTime(0.05,t0+0.03);
+    g.gain.setValueAtTime(0.05,t0+0.20);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+0.34);
+    [440,480].forEach(f=>{ const o=ctx.createOscillator(); o.type='sine'; o.frequency.value=f;
+      o.connect(g); o.start(t0); o.stop(t0+0.36); });
+  }catch{}
+}
+function startRing(){ stopRing(); ringBeep(); ringTimer=setInterval(ringBeep,650); }
+function stopRing(){ if(ringTimer){ clearInterval(ringTimer); ringTimer=null; } }
+function attachAnalyser(mediaStreamTrack){
+  const ctx=ensureCtx();
+  const source=ctx.createMediaStreamSource(new MediaStream([mediaStreamTrack]));
+  const analyser=ctx.createAnalyser(); analyser.fftSize=256; analyser.smoothingTimeConstant=.72;
+  source.connect(analyser); // analyser is a sink — no onward connection, so no double audio
+  return {source, analyser};   // return source too so teardown can disconnect it
+}
+function energy(an,buf){ if(!an)return 0; an.getByteTimeDomainData(buf);
+  let s=0; for(let i=0;i<buf.length;i++){const v=(buf[i]-128)/128; s+=v*v;} return Math.sqrt(s/buf.length);}
+
+let vstateName='idle';
+function setVoiceState(name){
+  if(name===vstateName)return; vstateName=name;
+  const cfg={idle:['Idle',''],listening:['Listening','you’re speaking'],
+             thinking:['Thinking','<span class="thinking-dots"><i></i><i></i><i></i></span>'],
+             speaking:['Speaking','Fish TTS streaming']}[name];
+  $('#vstate').className='vstate '+(name==='idle'?'':name);
+  $('#vlabel').textContent=cfg[0]; $('#vhint').innerHTML=cfg[1];
+  document.querySelector('.voice-body').style.setProperty('--halo', name==='speaking'?'.55':name==='listening'?'.4':name==='thinking'?'.3':'.18');
+  // pipeline nodes reflect live state
+  setNode('mic', name==='listening'?'on':'');
+  setNode('stt', name==='listening'?'on':'');
+  setNode('llm', name==='thinking'?'on':'');
+  setNode('tts', name==='speaking'?'on':'');
+}
+
+function fitCanvas(){
+  const dpr=window.devicePixelRatio||1, r=cvs.getBoundingClientRect();
+  cvs.width=r.width*dpr; cvs.height=r.height*dpr; cx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize',fitCanvas);
+
+const NB=48; let phase=0;
+function draw(){
+  requestAnimationFrame(draw);
+  const w=cvs.clientWidth,h=cvs.clientHeight; if(!w)return;
+  cx.clearRect(0,0,w,h);
+  phase+=0.03;
+
+  // pick the active real source; fall back to a gentle idle breath
+  let an=null, amp=0;
+  if(demoMode){ amp=demoAmp; }
+  else if(callActive){
+    const mE=micData?energy(micAnalyser,micData):0;
+    const aE=agentData?energy(agentAnalyser,agentData):0;
+    if(aE>0.012){ an=agentAnalyser; amp=aE; }
+    else if(mE>0.012){ an=micAnalyser; amp=mE; }
+    else { amp=0.006; }
+  }
+
+  const mid=h/2, gap=w/NB;
+  const grad=cx.createLinearGradient(0,0,w,0);
+  grad.addColorStop(0,getVar('--wave-a')); grad.addColorStop(1,getVar('--wave-b'));
+  cx.fillStyle=grad;
+
+  let freq=null;
+  if(an){ freq=an.frequencyBinCount?new Uint8Array(an.frequencyBinCount):null; if(freq)an.getByteFrequencyData(freq); }
+
+  for(let i=0;i<NB;i++){
+    let v;
+    if(freq){ const idx=Math.floor(i/NB*freq.length*0.7); v=freq[idx]/255; }
+    else { v=amp*8*(0.5+0.5*Math.sin(phase+i*0.4)); }
+    const bh=Math.max(2, v*(h*0.9));
+    const x=i*gap+gap*0.18, bw=gap*0.5;
+    roundRect(x,mid-bh/2,bw,bh,bw/2);
+  }
+}
+function roundRect(x,y,w,h,r){cx.beginPath();
+  cx.moveTo(x+r,y);cx.arcTo(x+w,y,x+w,y+h,r);cx.arcTo(x+w,y+h,x,y+h,r);
+  cx.arcTo(x,y+h,x,y,r);cx.arcTo(x,y,x+w,y,r);cx.closePath();cx.fill();}
+function getVar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+
+/* derive listening/thinking/speaking from real audio energy every frame */
+function stateLoop(){
+  requestAnimationFrame(stateLoop);
+  if(demoMode) return;                       // demo drives states directly
+  if(!callActive){ setVoiceState('idle'); return; }
+  const aE=agentData?energy(agentAnalyser,agentData):0;
+  const mE=micData?energy(micAnalyser,micData):0;
+
+  // Barge-in: you talk over the agent → how fast it goes quiet. Heuristic (frontend
+  // has no explicit yield signal): only count a FAST stop (<900ms) as a real yield, so a
+  // natural sentence-end that happens to fall in a longer window isn't miscounted.
+  quietFrames = aE<0.008 ? quietFrames+1 : 0;
+  if(aE>0.012 && mE>0.035 && !bargeArmed){ bargeArmed=true; tBarge=Date.now(); }
+  if(bargeArmed){
+    if(quietFrames>=6){ const dt=Date.now()-tBarge;      // agent actually went quiet
+      if(dt<900) setMetric('mBarge',fmtMs(dt),false); bargeArmed=false; }
+    else if(Date.now()-tBarge>900){ bargeArmed=false; }  // too slow → treat as natural end, not a barge
+  }
+
+  if(aE>0.012){ setVoiceState('speaking');
+    // Response = user done → agent's FIRST audible audio (the perceived latency)
+    if(awaitingAgent&&!respShown&&tUserDone){ setMetric('mLatency',fmtMs(Date.now()-tUserDone),false);
+      respShown=true; awaitingAgent=false; } }
+  else if(mE>0.02){ setVoiceState('listening');
+    // user speaking → reset per-turn latency capture
+    awaitingAgent=true; tUserDone=Date.now(); ttftShown=false; respShown=false; }
+  else if(awaitingAgent){ setVoiceState('thinking'); }
+  else setVoiceState('idle');
+}
+
+/* ============================================================
+   Connection state machine + LiveKit wiring (reused, hardened)
    ============================================================ */
 const STATES={
-  idle:        {cls:'',          label:'idle',        live:'idle'},
-  connecting:  {cls:'connecting',label:'connecting…', live:'connecting'},
-  cold:        {cls:'cold',      label:'waking agent…',live:'cold start'},
-  connected:   {cls:'connected', label:'connected',   live:'live'},
-  ended:       {cls:'ended',     label:'call ended',  live:'ended'},
-  error:       {cls:'error',     label:'error',       live:'error'},
+  idle:{cls:'',label:'idle'}, connecting:{cls:'',label:'connecting…'},
+  cold:{cls:'warn',label:'waking agent…'}, connected:{cls:'on',label:'live'},
+  ended:{cls:'',label:'ended'}, error:{cls:'err',label:'error'},
 };
-function setState(name, detail){
-  const s=STATES[name]||STATES.idle;
-  const el=$('#state'); el.className='state '+s.cls;
-  $('#stateLabel').textContent=detail||s.label;
-  $('#live').classList.toggle('on', name==='connected');
-  $('#liveLabel').textContent=s.live;
-}
-function showError(msg){
-  const b=$('#errbar'); b.textContent=msg; b.classList.add('show');
-}
-function clearError(){ $('#errbar').classList.remove('show'); }
+function setState(name,detail){const s=STATES[name]||STATES.idle;
+  $('#live').className='live '+s.cls; $('#liveLabel').textContent=detail||s.label;}
+function showError(m){const b=$('#errbar');b.textContent=m;b.classList.add('show');setTimeout(()=>b.classList.remove('show'),6000);}
 
-let room=null;
-let agentReadyTimer=null;
-let agentReady=false;
-let endedByUser=false;
+let agentReadyTimer=null, agentReady=false, endedByUser=false;
 const AGENT_READY_TIMEOUT_MS=30000;
-
-function isAgent(p){
-  return !!p && (p.isAgent || (p.identity||'').toLowerCase().includes('agent') || (p.identity||'').toLowerCase().includes('lead-qual'));
-}
-
-function markAgentReady(){
-  if(agentReady) return;
-  agentReady=true;
-  if(agentReadyTimer){ clearTimeout(agentReadyTimer); agentReadyTimer=null; }
-  setState('connected');
-}
+function isAgent(p){return !!p&&(p.isAgent||(p.identity||'').toLowerCase().includes('agent')||(p.identity||'').toLowerCase().includes('lead-qual'));}
+function markAgentReady(){if(agentReady)return;agentReady=true;
+  if(agentReadyTimer){clearTimeout(agentReadyTimer);agentReadyTimer=null;}
+  stopRing(); starting=false; setState('connected'); lockPicker(false); renderPicker(); playJoinSound();}
 
 async function startCall(){
-  if(callActive) return;
-  endedByUser=false; agentReady=false; clearError();
-  $('#startBtn').disabled=true; $('#lang').disabled=true;
+  if(callActive||starting)return;   // real re-entry guard (keyboard + double-tap safe)
+  starting=true;
+  endedByUser=false; agentReady=false;
+  lockPicker(true);
   setState('connecting');
+  ensureCtx(); if(audioCtx.state==='suspended') audioCtx.resume();
+  startRing();   // ring the instant you click — before mic/dispatch awaits
 
-  // 1) mic permission up front (clear failure before we dispatch)
-  try{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    stream.getTracks().forEach(t=>t.stop());
-  }catch(e){
-    setState('error','mic blocked'); showError('Microphone permission denied — allow the mic and try again.');
-    $('#startBtn').disabled=false; $('#lang').disabled=false; return;
-  }
+  try{ micStream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ setState('error','mic blocked'); showError('Microphone permission denied — allow the mic and retry.');
+    stopRing(); starting=false; lockPicker(false); return; }
 
-  // 2) ask our server for a token + dispatch the lead-qual agent
   let session;
   try{
-    const res=await fetch('/api/session',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({language: $('#lang').value}),
-    });
+    const res=await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({language:selLang, voice:voiceId(selLang,selVoice)})});
     session=await res.json();
-    if(!res.ok) throw new Error(session.error||'Failed to start session.');
-  }catch(e){
-    setState('error','start failed'); showError(e.message||'Could not reach the session endpoint.');
-    $('#startBtn').disabled=false; $('#lang').disabled=false; return;
-  }
+    if(!res.ok)throw new Error(session.error||'Failed to start session.');
+  }catch(e){ setState('error','start failed'); showError(e.message||'Could not reach the session endpoint.');
+    stopRing(); starting=false; lockPicker(false);
+    micStream.getTracks().forEach(t=>t.stop()); micStream=null; return; }
 
-  // 3) connect to LiveKit and wire real events
-  room=new Room({adaptiveStream:true, dynacast:true});
+  room=new Room({adaptiveStream:true,dynacast:true});
   wireRoom(room);
-
-  callActive=true;
-  resetVisuals();
-  $('#endBtn').disabled=false;
+  callActive=true; resetUI(); resetMetrics(); renderPicker();
+  $('#endCall').classList.add('show');
 
   try{
-    await room.connect(session.livekitUrl, session.token);
-    // agent may already be present when connect resolves
-    for(const p of room.remoteParticipants.values()){ if(isAgent(p)){ markAgentReady(); break; } }
+    await room.connect(session.livekitUrl,session.token);
+    for(const p of room.remoteParticipants.values()){if(isAgent(p)){markAgentReady();break;}}
     if(!agentReady){
       setState('cold');
       agentReadyTimer=setTimeout(()=>{
-        if(!agentReady && room){
-          setState('error','no agent');
-          showError(`No agent joined after ${AGENT_READY_TIMEOUT_MS/1000}s. Check the worker is running and registered as "lead-qual".`);
-          endedByUser=true; room.disconnect();
-        }
-      }, AGENT_READY_TIMEOUT_MS);
+        if(!agentReady&&room){ setState('error','no agent');
+          showError(`No agent joined after ${AGENT_READY_TIMEOUT_MS/1000}s. Check the worker is running as "lead-qual".`);
+          endedByUser=true; room.disconnect(); }
+      },AGENT_READY_TIMEOUT_MS);
     }
     await room.localParticipant.setMicrophoneEnabled(true);
-    // try to unlock audio output (may be blocked until a gesture — handled below)
+    // tap the real local mic track for the waveform
+    const micTrack=micStream&&micStream.getAudioTracks()[0];
+    if(micTrack){ const a=attachAnalyser(micTrack); micSrc=a.source; micAnalyser=a.analyser; micData=new Uint8Array(micAnalyser.fftSize); }
+    setNode('mic','on');
     primeAudio();
-  }catch(e){
-    setState('error','connect failed'); showError(e.message||'LiveKit connection failed.');
-    teardown();
-  }
+  }catch(e){ setState('error','connect failed'); showError(e.message||'LiveKit connection failed.'); teardown(); }
 }
 
 function wireRoom(r){
-  r.on(RoomEvent.Connected, ()=>{ /* state handled in startCall after connect resolves */ })
-   .on(RoomEvent.Disconnected, (reason)=>{
-      const serverClosed = reason===DisconnectReason.ROOM_DELETED
-        || reason===DisconnectReason.PARTICIPANT_REMOVED
-        || reason===DisconnectReason.SERVER_SHUTDOWN;
-      // ROOM_DELETED etc. are terminal — livekit-client does not auto-reconnect; end cleanly.
-      if(!endedByUser && $('#state').className.indexOf('error')===-1){
-        setState('ended', serverClosed?'call ended':'disconnected');
-      }
+  r.on(RoomEvent.Disconnected,(reason)=>{
+      const closed=reason===DisconnectReason.ROOM_DELETED||reason===DisconnectReason.PARTICIPANT_REMOVED||reason===DisconnectReason.SERVER_SHUTDOWN;
+      if(!endedByUser&&$('#live').className.indexOf('err')===-1) setState('ended',closed?'ended':'disconnected');
       teardown();
    })
-   .on(RoomEvent.TrackSubscribed, (track, pub, participant)=>{
-      if(track.kind==='audio' && isAgent(participant)){
-        track.attach($('#agentAudio'));   // route agent voice to the hidden <audio>
-        markAgentReady();
+   .on(RoomEvent.TrackSubscribed,(track,pub,participant)=>{
+      if(track.kind==='audio'&&isAgent(participant)){
+        track.attach($('#agentAudio')); markAgentReady();
+        // tap the real agent audio track for the waveform + speaking detection
+        const mst=track.mediaStreamTrack;
+        if(mst){ const a=attachAnalyser(mst); agentSrc=a.source; agentAnalyser=a.analyser; agentData=new Uint8Array(agentAnalyser.fftSize); }
+        // Audio fidelity badge — real sample rate (Opus is LiveKit's audio codec)
+        let sr=(audioCtx&&audioCtx.sampleRate)||48000;
+        try{ const s=mst&&mst.getSettings&&mst.getSettings(); if(s&&s.sampleRate) sr=s.sampleRate; }catch{}
+        setMetric('mAudio',`${Math.round(sr/1000)}kHz · Opus`,false);
       }
    })
-   .on(RoomEvent.TrackUnsubscribed, (track)=>{
-      if(track.kind==='audio') track.detach();
-   })
-   .on(RoomEvent.ActiveSpeakersChanged, (speakers)=>{
-      // agent speaking → drive swim speed + center stars via speakingT
-      if(speakers.some(isAgent)) speakingT=performance.now();
-   })
-   .on(RoomEvent.TranscriptionReceived, (segments, participant)=>{
+   .on(RoomEvent.TrackUnsubscribed,(track)=>{ if(track.kind==='audio')track.detach(); })
+   .on(RoomEvent.TranscriptionReceived,(segments,participant)=>{
       const who=isAgent(participant)?'agent':'user';
       if(who==='agent') markAgentReady();
+      flashNode(who==='agent'?'llm':'stt');
       for(const seg of segments||[]){
-        if(seg && typeof seg.text==='string') upsertLine(who, seg.id||seg.text, seg.text, seg.final!==false);
+        if(!seg||typeof seg.text!=='string') continue;
+        // First token = user done → agent's first NON-EMPTY transcribed word.
+        // (Response is measured separately off first audio, in stateLoop — so they differ.)
+        if(who==='agent' && seg.text.trim() && awaitingAgent && !ttftShown && tUserDone){
+          ttftShown=true; setMetric('mTtft',fmtMs(Date.now()-tUserDone),false);
+        }
+        pushSeg(who,seg.id||seg.text,seg.text,seg.final);
       }
    })
-   .on(RoomEvent.DataReceived, (payload, participant, kind, topic)=>{
-      handleData(payload, topic);
-   })
-   .on(RoomEvent.AudioPlaybackStatusChanged, ()=>{
-      $('#audioGate').classList.toggle('show', !r.canPlaybackAudio);
-   });
+   .on(RoomEvent.AudioPlaybackStatusChanged,()=>{ $('#audioGate').classList.toggle('show',!r.canPlaybackAudio); });
 }
 
-/* CONTRACT.md web rules: seq guard + dual topic/kind guard. */
-let lastSeq=-Infinity;
-function handleData(payload, topic){
-  if(!callActive) return;   // ignore late packets after the call ended
-  let data;
-  try{ data=JSON.parse(new TextDecoder().decode(payload)); }
-  catch{ return; } // not JSON → ignore
-  const isQual = topic==='qualification' || data.kind==='qualification';
-  if(!isQual) return;                         // dual guard
-  if(typeof data.seq==='number'){
-    if(data.seq<=lastSeq) return;             // ignore stale / backwards seq
-    lastSeq=data.seq;
-  }
-  applyQualification(data);
-}
-
-async function primeAudio(){
-  if(!room) return;
+async function primeAudio(){ if(!room)return;
   try{ await room.startAudio(); $('#audioGate').classList.remove('show'); }
-  catch{ $('#audioGate').classList.add('show'); }
-}
-$('#audioGate').addEventListener('click', async ()=>{
-  await primeAudio();
-});
+  catch{ $('#audioGate').classList.add('show'); } }
+$('#audioGate').addEventListener('click',primeAudio);
 
 function teardown(){
-  if(agentReadyTimer){ clearTimeout(agentReadyTimer); agentReadyTimer=null; }
-  callActive=false;
-  if(room){
-    try{ room.removeAllListeners(); }catch{}
-    room=null;
-  }
-  lastSeq=-Infinity;
-  $('#startBtn').disabled=false; $('#lang').disabled=false; $('#endBtn').disabled=true;
+  if(agentReadyTimer){clearTimeout(agentReadyTimer);agentReadyTimer=null;}
+  callActive=false; starting=false; stopRing();
+  if(room){ try{room.removeAllListeners();}catch{} room=null; }
+  awaitingAgent=false;
+  // release the Web Audio graph and the probe mic capture (no lingering mic after hangup)
+  try{ micSrc&&micSrc.disconnect(); }catch{}
+  try{ agentSrc&&agentSrc.disconnect(); }catch{}
+  try{ micAnalyser&&micAnalyser.disconnect(); }catch{}
+  try{ agentAnalyser&&agentAnalyser.disconnect(); }catch{}
+  if(micStream){ try{ micStream.getTracks().forEach(t=>t.stop()); }catch{} }
+  micStream=micSrc=agentSrc=micAnalyser=agentAnalyser=micData=agentData=null;
+  lockPicker(false); $('#endCall').classList.remove('show');
+  renderPicker();
   $('#audioGate').classList.remove('show');
-  renderTranscript(); // refresh empty hint if needed
+  setVoiceState('idle');
+  document.querySelectorAll('.node').forEach(n=>n.className='node');
+  resetCaption();
 }
-
 async function endCall(){
-  if(!room){ teardown(); setState('ended'); return; }
-  endedByUser=true;
-  setState('ended');
+  if(!room){teardown();setState('ended');return;}
+  endedByUser=true; setState('ended');
   try{ await room.disconnect(); }catch{}
-  // Disconnected handler runs teardown(); ensure UI ends even if event is missed.
   teardown();
 }
 
-$('#startBtn').addEventListener('click', startCall);
-$('#endBtn').addEventListener('click', endCall);
-window.addEventListener('beforeunload', ()=>{ if(room) room.disconnect(); });
+$('#endCall').addEventListener('click',endCall);
+$('#voices').addEventListener('click',e=>{const b=e.target.closest('.vchip'); if(b)clickVoice(+b.dataset.vi);});
+$('#regionBtn').addEventListener('click',e=>{e.stopPropagation(); $('#regionMenu').classList.toggle('open');});
+$('#regionMenu').addEventListener('click',e=>{const b=e.target.closest('button'); if(b)selectRegion(b.dataset.rc);});
+document.addEventListener('click',e=>{ if(!e.target.closest('.region')) $('#regionMenu').classList.remove('open'); });
+window.addEventListener('beforeunload',()=>{ if(room)room.disconnect(); });
 
-/* Warm-up: wake a cold worker on load and every 5 min while the page is open
-   and NOT in an active call. Fire-and-forget; errors ignored. Pauses for the
-   duration of a call (the interval simply skips ticks while callActive). */
-function warmup(){ fetch('/api/warmup',{method:'POST'}).catch(()=>{}); }
-warmup(); // on load, before any call
-setInterval(()=>{ if(!callActive) warmup(); }, 5*60*1000);
+/* boot */
+renderPicker();
+resetUI(); setState('idle'); setVoiceState('idle');
+fitCanvas(); draw(); stateLoop();
 
-/* boot: idle visuals only (NO fake call). The swim/voice loop animates the
-   idle state; transcript + scorecard stay empty until a real call. */
-resetVisuals();
-setState('idle');
-requestAnimationFrame(loop);
+/* ============================================================
+   Optional scripted preview — open with ?demo to see the caption
+   stream, voice states, and telemetry animate WITHOUT LiveKit/worker.
+   Visual only; the real call path is untouched.
+   ============================================================ */
+if(new URLSearchParams(location.search).has('demo')){
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const say=async(who,text,id)=>{
+    setVoiceState(who==='agent'?'speaking':'listening'); demoAmp=0.09;
+    const ws=text.split(' ');
+    for(let i=1;i<=ws.length;i++){ pushSeg(who,id,ws.slice(0,i).join(' '),false); await sleep(85+Math.random()*80); }
+    pushSeg(who,id,text,true); demoAmp=0.006;
+  };
+  const think=async(ms)=>{ setVoiceState('thinking'); demoAmp=0.006; await sleep(ms); };
+  (async()=>{
+    demoMode=true; callActive=true; setState('connected','live · demo');
+    lockPicker(true); renderPicker();
+    setMetric('mAudio','48kHz · Opus',false);
+    while(demoMode){
+      resetUI(); await sleep(650);
+      await say('user',"Hi, I'm looking for a real-time voice agent for customer support",'d1');
+      await think(700); setMetric('mTtft','310ms',false); setMetric('mLatency','520ms',false);
+      applyQualification({seq:1,slots:{use_case:'Real-time support agent',real_time:'real-time'},signals:['Real-time'],path:'needs-more-info',reason:'gathering signal',next_question:'What monthly volume are you expecting?'});
+      await say('agent',"Great — what monthly volume are you expecting?",'d2'); await sleep(500);
+      await say('user',"Around three hundred thousand minutes a month, and we're switching from ElevenLabs",'d3');
+      await think(760); setMetric('mTtft','290ms',false); setMetric('mLatency','470ms',false); setMetric('mBarge','130ms',false);
+      applyQualification({seq:2,slots:{volume:'~300k min / mo',current_provider:'ElevenLabs',priority:'latency',timeline:'Before Q3'},signals:['Real-time','High volume','Switching from 11Labs','Privacy: zero-retention'],path:'cloud-enterprise',reason:'real-time + high volume + switching',next_question:'What peak concurrency are you planning for?'});
+      await say('agent',"That's a strong fit for our enterprise plan — I'll connect you with our solutions team",'d4');
+      await sleep(2600);
+    }
+  })();
+}
 </script>
 </body>
 </html>

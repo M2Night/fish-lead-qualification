@@ -6,7 +6,7 @@
  * Responsibilities:
  *   - Serve the static demo at `public/index.html`.
  *   - POST /api/session → mint a participant token + dispatch the `lead-qual`
- *     agent with `{ language }` metadata, returning { livekitUrl, roomName, token }.
+ *     agent with `{ language, voice }` metadata, returning { livekitUrl, roomName, token }.
  *
  * LiveKit API keys stay server-side (read from env); the browser only ever
  * receives a short-lived participant JWT.
@@ -22,19 +22,8 @@ const { AccessToken, AgentDispatchClient } = require("livekit-server-sdk");
 const AGENT_NAME = "lead-qual"; // must match the worker's registered agent_name (CONTRACT.md)
 const PORT = Number(process.env.PORT) || 3000;
 
-// ISO-ish codes the worker understands; default `en` per CONTRACT.md.
-const SUPPORTED_LANGUAGES = new Set([
-  "en",
-  "zh",
-  "de",
-  "ja",
-  "fr",
-  "es",
-  "ko",
-  "ar",
-  "ru",
-  "pt",
-]);
+// Languages the UI offers (per CONTRACT.md); default `en`.
+const SUPPORTED_LANGUAGES = new Set(["en", "zh", "ja"]);
 
 function requireLiveKitEnv() {
   const livekitUrl = process.env.LIVEKIT_URL;
@@ -87,9 +76,9 @@ app.post("/api/session", async (req, res) => {
         : "";
     const language = SUPPORTED_LANGUAGES.has(requested) ? requested : "en";
 
-    // Selected voice id (region × voice matrix). Free-form string; the worker maps
-    // it to a Fish voice_id. The current worker ignores unknown metadata keys, so
-    // this is forward-compatible until the backend adds the per-region voice table.
+    // Selected Fish voice_id (per language × voice). Forwarded (trimmed) in dispatch
+    // metadata; the worker validates it as 32-hex and falls back to FISH_VOICE_ID on an
+    // invalid/missing value.
     const voice =
       typeof req.body?.voice === "string" ? req.body.voice.trim().slice(0, 64) : "";
 

@@ -4,7 +4,7 @@ Two pieces, deployed separately:
 
 | Piece | Where | What it is |
 | --- | --- | --- |
-| `web/` | **Vercel** | static demo page + a tiny token/dispatch API (`/api/session`, `/api/warmup`) |
+| `web/` | **Vercel** | static demo page + a tiny token/dispatch API (`/api/session`) |
 | `worker/` (incl. `worker/prompts/`) | **LiveKit Cloud Agents** | the `lead-qual` voice worker (Deepgram STT · Gemma/OpenRouter LLM · Fish TTS) |
 
 The browser only ever gets a short-lived LiveKit participant JWT. All provider keys
@@ -64,62 +64,30 @@ brew install livekit-cli
 lk cloud auth          # opens a browser, links the project
 ```
 
-### First deploy
+### Deploy (from the agent-demo-core repo root)
 
-Run from `worker/`. Pick the project the web app uses, and the US region:
+The worker builds from the **agent-demo-core** repo root (`lk` uses the working dir as
+the build context); `AGENT_MODULE` selects which agent the shared image runs.
 
 ```bash
-cd worker
-lk agent create . --project fish-audio-demo --region us-east --secrets-file .env
+cd <agent-demo-core repo root>
+lk agent deploy --config livekit.lead-qual.toml --secrets AGENT_MODULE=agents.lead_qual.main
 ```
 
-This builds the image (US-region build), registers an agent, writes a
-`livekit.toml` (commit it afterward), and starts the worker. The worker registers
-as `agent_name="lead-qual"`, matching what the web dispatches.
-
-> `--secrets-file .env` injects the provider keys but **also** `LIVEKIT_*`; that's
-> fine for create, but if you regenerate secrets later strip `LIVEKIT_URL` /
-> `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` — LiveKit Cloud injects those itself.
+Redeploy after changes with the same command; tail logs with
+`lk agent logs --config livekit.lead-qual.toml`.
 
 ### Secrets
 
-The worker needs provider keys at runtime. Set them as agent secrets — either pass
-the env file at create time (as above) or update them later (run from `worker/`):
+Set provider keys as agent secrets on the lead-qual agent (from the agent-demo-core root;
+see `agent-demo-core/agents/lead_qual/.env.example`):
 
-```bash
-lk agent update-secrets --secrets-file .env
-```
-
-Required secrets (see `worker/.env.example`):
-
-- `FISH_API_KEY`, `FISH_VOICE_ID`
-- `DEEPGRAM_API_KEY`
-- `OPENROUTER_API_KEY` (qualification side-call; also the `openrouter` LLM provider)
-- `LLM_PROVIDER` (`custom` = self-hosted OpenAI-compatible endpoint, `openrouter`, or
-  `livekit`)
-- `CUSTOM_LLM_BASE_URL`, `CUSTOM_LLM_API_KEY`, `CUSTOM_LLM_MODEL` (Gemma SGLang
-  endpoint — the low-latency conversation LLM, used when `LLM_PROVIDER=custom`)
-- `LLM_MODEL` (model id for the `openrouter` / `livekit` providers; distinct from
-  `CUSTOM_LLM_MODEL` so the two never conflict)
-- optional tuning: `CUSTOM_LLM_MAX_TOKENS` (default 0 = no cap; 60 recommended for
-  voice), `IDLE_MAX_NUDGES` (default 2),
-  `NUM_IDLE_PROCESSES` (default 1), `TURN_DETECTION_MODE=multilingual`,
-  `FISH_TTS_LATENCY_MODE=low`, `PREEMPTIVE_GENERATION=true`
+- `FISH_API_KEY`, `FISH_VOICE_ID` (fallback voice), `DEEPGRAM_API_KEY`
+- LLM: `LLM_PROVIDER` + either `CUSTOM_LLM_*` (self-hosted Gemma) or `OPENROUTER_API_KEY`
+- `AGENT_MODULE=agents.lead_qual.main`
 
 > **Do NOT set** `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` as agent
-> secrets — LiveKit Cloud injects those automatically for the agent.
-
-### Redeploy after code changes
-
-```bash
-lk agent deploy
-```
-
-### Watch logs
-
-```bash
-lk agent logs
-```
+> secrets — LiveKit Cloud injects those automatically.
 
 ---
 
