@@ -61,30 +61,6 @@
        background:var(--bg);min-height:0;overflow:hidden}
   .col{background:var(--bg);min-height:0;display:flex;flex-direction:column;overflow:hidden}
 
-  /* ---- live caption (current turn only, streamed word-by-word) ---- */
-  .caption{margin-top:24px;width:100%;max-width:470px;min-height:80px;
-           display:flex;flex-direction:column;align-items:center;gap:10px;transition:opacity .4s}
-  .caption.empty{opacity:0}
-  .cap-prev{font-family:var(--mono);font-size:11.5px;line-height:1.4;color:var(--ink-3);opacity:.5;
-            max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:15px}
-  .cap-line{display:flex;align-items:baseline;gap:10px;justify-content:center;flex-wrap:wrap;max-width:100%}
-  .cap-who{font-family:var(--mono);font-size:9.5px;letter-spacing:1.6px;text-transform:uppercase;
-           color:var(--ink-3);display:inline-flex;align-items:center;gap:6px;flex:none}
-  .cap-who i{width:6px;height:6px;border-radius:50%;background:var(--ink-3);transition:.25s}
-  .cap-who.you{color:var(--accent-2)} .cap-who.you i{background:var(--accent-2)}
-  .cap-who.agent{color:var(--accent)} .cap-who.agent i{background:var(--accent)}
-  .cap-who.active i{animation:capdot 1.2s infinite}
-  @keyframes capdot{50%{opacity:.35}}
-  .cap-text{font-size:16.5px;line-height:1.5;color:var(--ink);font-weight:500;text-align:left}
-  .cap-text.interim{color:var(--ink-2);font-weight:400}
-  .cap-text .w{display:inline-block}
-  .cap-text .w.reveal{animation:capword .34s ease both}
-  @keyframes capword{from{opacity:0;transform:translateY(.32em)}to{opacity:1;transform:none}}
-  .cap-caret{display:none;width:2px;height:1.05em;background:var(--accent);margin-left:1px;
-             transform:translateY(3px);animation:caret 1s steps(1) infinite}
-  .cap-caret.on{display:inline-block}
-  @keyframes caret{50%{opacity:0}}
-
   /* ---- voice presence (center) ---- */
   .voice-col{align-items:center;position:relative}
   .voice-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:20px;position:relative}
@@ -157,11 +133,6 @@
   .node i{width:6px;height:6px;border-radius:50%;background:var(--ink-3);transition:.25s;flex:none}
   .node.on{color:var(--ink);border-color:var(--accent)} .node.on i{background:var(--accent);box-shadow:0 0 8px var(--accent)}
   .arrow{color:var(--ink-3);font-size:11px;flex:none}
-  .metrics{display:flex;gap:20px;margin-left:auto;flex-wrap:wrap}
-  .metric{display:flex;flex-direction:column;gap:1px;min-width:64px}
-  .metric .m-k{font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--ink-3)}
-  .metric .m-v{font-family:var(--mono);font-size:14px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
-  .metric .m-v.dim{color:var(--ink-3)}
 
   .errbar{display:none;position:fixed;bottom:74px;left:50%;transform:translateX(-50%);z-index:20;
           font-family:var(--mono);font-size:11.5px;color:#fff;background:var(--bad);
@@ -222,15 +193,6 @@
           <div class="hint" id="vhint">Start the demo and speak to the agent</div>
         </div>
 
-        <!-- live caption: current turn only, streamed word-by-word -->
-        <div class="caption empty" id="caption">
-          <div class="cap-prev" id="capPrev"></div>
-          <div class="cap-line" id="capLine">
-            <span class="cap-who" id="capWho"><i></i><span>—</span></span>
-            <span class="cap-text" id="capText"></span><span class="cap-caret" id="capCaret"></span>
-          </div>
-        </div>
-
         <button class="btn end audiogate" id="audioGate">Enable audio output</button>
       </div>
     </div>
@@ -243,12 +205,6 @@
       <span class="node" data-node="stt"><i></i>STT</span><span class="arrow">→</span>
       <span class="node" data-node="llm"><i></i>Reasoning</span><span class="arrow">→</span>
       <span class="node" data-node="tts"><i></i>Fish TTS</span>
-    </div>
-    <div class="metrics">
-      <div class="metric"><span class="m-k">Response</span><span class="m-v dim" id="mLatency">—</span></div>
-      <div class="metric"><span class="m-k">First token</span><span class="m-v dim" id="mTtft">—</span></div>
-      <div class="metric"><span class="m-k">Barge-in</span><span class="m-v dim" id="mBarge">—</span></div>
-      <div class="metric"><span class="m-k">Audio</span><span class="m-v dim" id="mAudio">—</span></div>
     </div>
   </footer>
 </div>
@@ -271,9 +227,6 @@ $('#fishsvg').innerHTML=BARS.map(b=>
   `<rect x="${b.x}" y="${b.y}" width="16" height="${b.h}" rx="8" fill="currentColor"/>`).join('');
 $('#fishsvg').style.color='var(--ink)';
 
-function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-/* strip agent emotion cues per CONTRACT.md (display only) */
-function stripEmotion(t){return (t||'').replace(/\[[^\]\n]{0,40}\]/g,"").replace(/\s{2,}/g," ").trim();}
 
 /* ============================================================
    Language × voice matrix — 3 languages, 3 real Fish voices each. `id` is the
@@ -351,62 +304,10 @@ let room=null, callActive=false;
 
 function resetUI(){
   document.querySelectorAll('.node').forEach(n=>n.className='node');
-  resetCaption();
 }
 
 /* ============================================================
-   Live caption — current turn only, streamed word-by-word.
-   Visualizes the STT interim→final pipeline: interim text is dim
-   with a blinking caret; on finalize it locks in. Reuses CONTRACT.md
-   emotion-cue stripping. DOM stays tiny (a few word spans).
-   ============================================================ */
-let capRun=null;                 // {who, ids:[], text:{}, finals:{}}
-let capPrev={who:'',text:''};    // last completed line (context)
-let capShown=0;                  // words already revealed in current run
-function joinRun(r){ return r.ids.map(i=>r.text[i]).join(' ').replace(/\s{2,}/g,' ').trim(); }
-function runInterim(r){ return r.ids.some(i=>!r.finals[i]); }
-
-function pushSeg(who,id,text,final){
-  const clean=stripEmotion(text);
-  if(!capRun || capRun.who!==who){
-    if(capRun && joinRun(capRun)) capPrev={who:capRun.who, text:joinRun(capRun)};
-    capRun={who, ids:[], text:{}, finals:{}}; capShown=0;
-  }
-  if(!clean){
-    if(id in capRun.text){ delete capRun.text[id]; delete capRun.finals[id]; capRun.ids=capRun.ids.filter(x=>x!==id); }
-  }else{
-    if(!(id in capRun.text)) capRun.ids.push(id);
-    capRun.text[id]=clean; capRun.finals[id]=(final!==false);
-  }
-  renderCaption();
-}
-
-function renderCaption(){
-  const cap=$('#caption');
-  if(!capRun && !capPrev.text){ cap.className='caption empty'; return; }
-  cap.className='caption';
-  $('#capPrev').textContent = capPrev.text ? (capPrev.who==='agent'?'Agent · ':'You · ')+capPrev.text : '';
-  const whoEl=$('#capWho'), textEl=$('#capText');
-  if(!capRun){ whoEl.className='cap-who'; whoEl.querySelector('span').textContent='—';
-    textEl.className='cap-text'; textEl.innerHTML=''; $('#capCaret').className='cap-caret'; return; }
-  const who=capRun.who, interim=runInterim(capRun);
-  whoEl.className='cap-who '+(who==='agent'?'agent':'you')+(interim?' active':'');
-  whoEl.querySelector('span').textContent = who==='agent'?'Agent':'You';
-  const words=joinRun(capRun).split(' ').filter(Boolean);
-  textEl.className='cap-text'+(interim?' interim':'');
-  textEl.innerHTML=words.map((w,i)=>`<span class="w${i>=capShown?' reveal':''}">${esc(w)}</span>`).join(' ');
-  capShown=words.length;
-  $('#capCaret').className='cap-caret'+(interim?' on':'');
-}
-
-function resetCaption(){ capRun=null; capPrev={who:'',text:''}; capShown=0; renderCaption(); }
-
-/* Legacy scripted-demo hook only — real calls receive no qualification data (the agent
-   is conversation-only: it routes verbally, no scorecard / data channel). No UI. */
-function applyQualification(_q){ /* intentionally no UI */ }
-
-/* ============================================================
-   Telemetry — pipeline nodes + REAL frontend-measurable metrics only
+   Telemetry — pipeline node lights (driven by voice state + transcription events)
    ============================================================ */
 function setNode(name,cls){const n=$(`.node[data-node="${name}"]`); if(n)n.className='node'+(cls?' '+cls:'');}
 let flashTimers={};
@@ -414,18 +315,13 @@ function flashNode(name){const n=$(`.node[data-node="${name}"]`); if(!n)return;
   n.classList.add('on'); clearTimeout(flashTimers[name]);
   flashTimers[name]=setTimeout(()=>n.classList.remove('on'),700);}
 
-let tUserDone=0, awaitingAgent=false, ttftShown=false, respShown=false;
-let bargeArmed=false, tBarge=0, quietFrames=0;   // interruption (barge-in) capture
-function fmtMs(ms){return ms>=1000?(ms/1000).toFixed(2)+'s':Math.round(ms)+'ms';}
-function setMetric(id,val,dim){const e=$('#'+id); if(e){ e.textContent=val; e.classList.toggle('dim',!!dim); }}
-function resetMetrics(){ ['mLatency','mTtft','mBarge','mAudio'].forEach(id=>setMetric(id,'—',true)); }
+let awaitingAgent=false;   // user finished, waiting on the agent (drives the 'thinking' state)
 
 /* ============================================================
    Real audio-reactive waveform (Web Audio AnalyserNode on real tracks)
    ============================================================ */
 let audioCtx=null, micAnalyser=null, agentAnalyser=null, micData=null, agentData=null;
 let micStream=null, micSrc=null, agentSrc=null;   // kept so teardown can fully release them
-let demoMode=false, demoAmp=0;   // scripted ?demo preview (visual only)
 const cvs=$('#wave'), cx=cvs.getContext('2d');
 function ensureCtx(){ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
 /* short synthesized "connected" chime (no asset) — a quick rising two-note ping */
@@ -502,8 +398,7 @@ function draw(){
 
   // pick the active real source; fall back to a gentle idle breath
   let an=null, amp=0;
-  if(demoMode){ amp=demoAmp; }
-  else if(callActive){
+  if(callActive){
     const mE=micData?energy(micAnalyser,micData):0;
     const aE=agentData?energy(agentAnalyser,agentData):0;
     if(aE>0.012){ an=agentAnalyser; amp=aE; }
@@ -536,29 +431,12 @@ function getVar(n){return getComputedStyle(document.documentElement).getProperty
 /* derive listening/thinking/speaking from real audio energy every frame */
 function stateLoop(){
   requestAnimationFrame(stateLoop);
-  if(demoMode) return;                       // demo drives states directly
   if(!callActive){ setVoiceState('idle'); return; }
   const aE=agentData?energy(agentAnalyser,agentData):0;
   const mE=micData?energy(micAnalyser,micData):0;
 
-  // Barge-in: you talk over the agent → how fast it goes quiet. Heuristic (frontend
-  // has no explicit yield signal): only count a FAST stop (<900ms) as a real yield, so a
-  // natural sentence-end that happens to fall in a longer window isn't miscounted.
-  quietFrames = aE<0.008 ? quietFrames+1 : 0;
-  if(aE>0.012 && mE>0.035 && !bargeArmed){ bargeArmed=true; tBarge=Date.now(); }
-  if(bargeArmed){
-    if(quietFrames>=6){ const dt=Date.now()-tBarge;      // agent actually went quiet
-      if(dt<900) setMetric('mBarge',fmtMs(dt),false); bargeArmed=false; }
-    else if(Date.now()-tBarge>900){ bargeArmed=false; }  // too slow → treat as natural end, not a barge
-  }
-
-  if(aE>0.012){ setVoiceState('speaking');
-    // Response = user done → agent's FIRST audible audio (the perceived latency)
-    if(awaitingAgent&&!respShown&&tUserDone){ setMetric('mLatency',fmtMs(Date.now()-tUserDone),false);
-      respShown=true; awaitingAgent=false; } }
-  else if(mE>0.02){ setVoiceState('listening');
-    // user speaking → reset per-turn latency capture
-    awaitingAgent=true; tUserDone=Date.now(); ttftShown=false; respShown=false; }
+  if(aE>0.012){ setVoiceState('speaking'); awaitingAgent=false; }
+  else if(mE>0.02){ setVoiceState('listening'); awaitingAgent=true; }
   else if(awaitingAgent){ setVoiceState('thinking'); }
   else setVoiceState('idle');
 }
@@ -607,7 +485,7 @@ async function startCall(){
 
   room=new Room({adaptiveStream:true,dynacast:true});
   wireRoom(room);
-  callActive=true; resetUI(); resetMetrics(); renderPicker();
+  callActive=true; resetUI(); renderPicker();
   $('#endCall').classList.add('show');
 
   try{
@@ -642,26 +520,14 @@ function wireRoom(r){
         // tap the real agent audio track for the waveform + speaking detection
         const mst=track.mediaStreamTrack;
         if(mst){ const a=attachAnalyser(mst); agentSrc=a.source; agentAnalyser=a.analyser; agentData=new Uint8Array(agentAnalyser.fftSize); }
-        // Audio fidelity badge — real sample rate (Opus is LiveKit's audio codec)
-        let sr=(audioCtx&&audioCtx.sampleRate)||48000;
-        try{ const s=mst&&mst.getSettings&&mst.getSettings(); if(s&&s.sampleRate) sr=s.sampleRate; }catch{}
-        setMetric('mAudio',`${Math.round(sr/1000)}kHz · Opus`,false);
       }
    })
    .on(RoomEvent.TrackUnsubscribed,(track)=>{ if(track.kind==='audio')track.detach(); })
-   .on(RoomEvent.TranscriptionReceived,(segments,participant)=>{
+   .on(RoomEvent.TranscriptionReceived,(_segments,participant)=>{
+      // Transcript UI removed; kept only to light the pipeline nodes + confirm the agent.
       const who=isAgent(participant)?'agent':'user';
       if(who==='agent') markAgentReady();
       flashNode(who==='agent'?'llm':'stt');
-      for(const seg of segments||[]){
-        if(!seg||typeof seg.text!=='string') continue;
-        // First token = user done → agent's first NON-EMPTY transcribed word.
-        // (Response is measured separately off first audio, in stateLoop — so they differ.)
-        if(who==='agent' && seg.text.trim() && awaitingAgent && !ttftShown && tUserDone){
-          ttftShown=true; setMetric('mTtft',fmtMs(Date.now()-tUserDone),false);
-        }
-        pushSeg(who,seg.id||seg.text,seg.text,seg.final);
-      }
    })
    .on(RoomEvent.AudioPlaybackStatusChanged,()=>{ $('#audioGate').classList.toggle('show',!r.canPlaybackAudio); });
 }
@@ -688,7 +554,6 @@ function teardown(){
   $('#audioGate').classList.remove('show');
   setVoiceState('idle');
   document.querySelectorAll('.node').forEach(n=>n.className='node');
-  resetCaption();
 }
 async function endCall(){
   if(!room){teardown();setState('ended');return;}
@@ -708,39 +573,6 @@ window.addEventListener('beforeunload',()=>{ if(room)room.disconnect(); });
 renderPicker();
 resetUI(); setState('idle'); setVoiceState('idle');
 fitCanvas(); draw(); stateLoop();
-
-/* ============================================================
-   Optional scripted preview — open with ?demo to see the caption
-   stream, voice states, and telemetry animate WITHOUT LiveKit/worker.
-   Visual only; the real call path is untouched.
-   ============================================================ */
-if(new URLSearchParams(location.search).has('demo')){
-  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-  const say=async(who,text,id)=>{
-    setVoiceState(who==='agent'?'speaking':'listening'); demoAmp=0.09;
-    const ws=text.split(' ');
-    for(let i=1;i<=ws.length;i++){ pushSeg(who,id,ws.slice(0,i).join(' '),false); await sleep(85+Math.random()*80); }
-    pushSeg(who,id,text,true); demoAmp=0.006;
-  };
-  const think=async(ms)=>{ setVoiceState('thinking'); demoAmp=0.006; await sleep(ms); };
-  (async()=>{
-    demoMode=true; callActive=true; setState('connected','live · demo');
-    lockPicker(true); renderPicker();
-    setMetric('mAudio','48kHz · Opus',false);
-    while(demoMode){
-      resetUI(); await sleep(650);
-      await say('user',"Hi, I'm looking for a real-time voice agent for customer support",'d1');
-      await think(700); setMetric('mTtft','310ms',false); setMetric('mLatency','520ms',false);
-      applyQualification({seq:1,slots:{use_case:'Real-time support agent',real_time:'real-time'},signals:['Real-time'],path:'needs-more-info',reason:'gathering signal',next_question:'What monthly volume are you expecting?'});
-      await say('agent',"Great — what monthly volume are you expecting?",'d2'); await sleep(500);
-      await say('user',"Around three hundred thousand minutes a month, and we're switching from ElevenLabs",'d3');
-      await think(760); setMetric('mTtft','290ms',false); setMetric('mLatency','470ms',false); setMetric('mBarge','130ms',false);
-      applyQualification({seq:2,slots:{volume:'~300k min / mo',current_provider:'ElevenLabs',priority:'latency',timeline:'Before Q3'},signals:['Real-time','High volume','Switching from 11Labs','Privacy: zero-retention'],path:'cloud-enterprise',reason:'real-time + high volume + switching',next_question:'What peak concurrency are you planning for?'});
-      await say('agent',"That's a strong fit for our enterprise plan — I'll connect you with our solutions team",'d4');
-      await sleep(2600);
-    }
-  })();
-}
 </script>
 </body>
 </html>
