@@ -5,22 +5,26 @@ agent that runs a natural lead-qualification conversation. The UI shows a live t
 and a qualification scorecard (use case · authority · volume · timeline) that fills in
 real time, with a buying-intent score and a **QUALIFIED** verdict.
 
-Multilingual (Fish's ~10 languages). Built on `voice-agent-core` (Deepgram STT /
+Multilingual (Fish's ~10 languages). Built on `agent-demo-core` (Deepgram STT /
 OpenRouter LLM / Fish s2.1-pro TTS / multilingual turn detection) over LiveKit.
+
+> **Worker moved.** The voice worker's source of truth is now
+> `agent-demo-core/agents/lead_qual/` (a uv workspace member, deployed from that repo).
+> This repo is the **web frontend + contract**; the `worker/` directory here is retained
+> for history only — see `DEPLOY.md §B`.
 
 ## Structure
 
 | Path | What |
 |------|------|
-| `worker/` | Python LiveKit agent — lead-qual persona + per-turn qualification extraction. |
-| `worker/prompts/` | The agent's system prompt, runbook, and extraction prompt (editable). |
 | `web/` | Static demo client (LiveKit) + a small token/dispatch endpoint. |
 | `CONTRACT.md` | The worker ↔ web data contract. |
+| `worker/` | **(moved)** now `agent-demo-core/agents/lead_qual/`; kept here for history. |
 
 ## Why standalone
 
 This is a **demo / lead-gen product**, not the agent-creation platform. It shares only the
-`voice-agent-core` engine; it deliberately does **not** depend on the workbench app.
+`agent-demo-core` engine; it deliberately does **not** depend on the workbench app.
 
 ## Run
 
