@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { RoomEvent, Track } from 'livekit-client';
 import {
   useRoomContext,
   useSessionContext,
@@ -104,8 +105,12 @@ export function LeadQualView({
   const [starting, setStarting] = useState(false);
   const [wantStart, setWantStart] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [perfEnabled, setPerfEnabled] = useState(false);
+  const [perfLines, setPerfLines] = useState<string[]>([]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const perfEnabledRef = useRef(false);
+  const perfT0Ref = useRef<number | null>(null);
 
   // Real MediaStreamTracks for the waveform: agent (from the assistant) + local mic.
   const agentMst = audioTrack?.publication?.track?.mediaStreamTrack;
@@ -134,13 +139,37 @@ export function LeadQualView({
 
   const callActive = isConnected || starting;
 
+  useEffect(() => {
+    const enabled = new URLSearchParams(window.location.search).has('perf');
+    perfEnabledRef.current = enabled;
+    setPerfEnabled(enabled);
+  }, []);
+
+  const markPerf = useCallback((name: string) => {
+    if (!perfEnabledRef.current || perfT0Ref.current === null) return;
+    const ms = Math.round(performance.now() - perfT0Ref.current);
+    const line = `${String(ms).padStart(5)}ms  ${name}`;
+    console.log(`⏱ ${name}`, `${ms}ms`);
+    setPerfLines((lines) => [...lines, line].slice(-40));
+  }, []);
+
+  function startPerf() {
+    if (!perfEnabledRef.current) return;
+    perfT0Ref.current = performance.now();
+    setPerfLines(['    0ms  click']);
+    console.log('⏱ click', '0ms');
+  }
+
   async function beginCall() {
     if (isConnected) return;
     setErr(null);
     setStarting(true);
     try {
+      markPerf('session.start begin');
       await start();
+      markPerf('session.start resolved');
     } catch (e) {
+      markPerf('session.start failed');
       setErr(e instanceof Error ? e.message : 'Could not start the call.');
     } finally {
       setStarting(false);
@@ -151,13 +180,17 @@ export function LeadQualView({
   // language/voice is already baked into the token source / agentMetadata).
   function clickVoice(id: string) {
     if (callActive) return;
+    startPerf();
     // Unlock audio playback NOW, inside the synchronous click gesture — before the async
     // connect. The worker speaks its opener the instant the room connects; if playback
     // isn't already unlocked, the browser engages it a beat late (RoomAudioRenderer only
     // renders AFTER subscription) and the first words are dropped. This mirrors the old
     // vanilla client's gesture-time primeAudio(); browser autoplay policy only honors the
     // unlock when it rides a real user gesture, so it must happen here, not after start().
-    void room.startAudio().catch(() => {});
+    void room
+      .startAudio()
+      .then(() => markPerf(`startAudio ok (${room.canPlaybackAudio ? 'playback on' : 'pending'})`))
+      .catch((e) => markPerf(`startAudio blocked: ${e instanceof Error ? e.name : 'error'}`));
     onVoiceChange(id);
     setWantStart(true);
   }
@@ -182,6 +215,7 @@ export function LeadQualView({
 
   async function endCall() {
     try {
+      markPerf('end clicked');
       await end();
     } catch {
       /* ignore */
@@ -214,6 +248,55 @@ export function LeadQualView({
     const t = setTimeout(() => setErr(null), 6000);
     return () => clearTimeout(t);
   }, [err]);
+
+  useEffect(() => {
+    const onSignalConnected = () => markPerf('signal connected');
+    const onConnectionStateChanged = (connectionState: unknown) =>
+      markPerf(`room state ${String(connectionState)}`);
+    const onParticipantConnected = (participant: { identity?: string }) =>
+      markPerf(`participant ${participant.identity ?? 'unknown'} connected`);
+    const onLocalTrackPublished = (publication: { source?: string }) =>
+      markPerf(`local track published ${publication.source ?? 'unknown'}`);
+    const onTrackSubscribed = (
+      track: { kind?: string; attachedElements?: unknown[] },
+      _publication: unknown,
+      participant: { identity?: string }
+    ) => {
+      if (track.kind !== Track.Kind.Audio) return;
+      markPerf(`audio track subscribed ${participant.identity ?? 'unknown'}`);
+      requestAnimationFrame(() =>
+        markPerf(`audio elements attached ${track.attachedElements?.length ?? 0}`)
+      );
+    };
+    const onAudioPlaybackStatusChanged = (enabled: boolean) =>
+      markPerf(`audio playback ${enabled ? 'on' : 'blocked'}`);
+
+    room
+      .on(RoomEvent.SignalConnected, onSignalConnected)
+      .on(RoomEvent.ConnectionStateChanged, onConnectionStateChanged)
+      .on(RoomEvent.ParticipantConnected, onParticipantConnected)
+      .on(RoomEvent.LocalTrackPublished, onLocalTrackPublished)
+      .on(RoomEvent.TrackSubscribed, onTrackSubscribed)
+      .on(RoomEvent.AudioPlaybackStatusChanged, onAudioPlaybackStatusChanged);
+
+    return () => {
+      room
+        .off(RoomEvent.SignalConnected, onSignalConnected)
+        .off(RoomEvent.ConnectionStateChanged, onConnectionStateChanged)
+        .off(RoomEvent.ParticipantConnected, onParticipantConnected)
+        .off(RoomEvent.LocalTrackPublished, onLocalTrackPublished)
+        .off(RoomEvent.TrackSubscribed, onTrackSubscribed)
+        .off(RoomEvent.AudioPlaybackStatusChanged, onAudioPlaybackStatusChanged);
+    };
+  }, [room, markPerf]);
+
+  useEffect(() => {
+    if (isConnected) markPerf('session connected state');
+  }, [isConnected, markPerf]);
+
+  useEffect(() => {
+    if (audioTrack) markPerf('agent audioTrack hook ready');
+  }, [audioTrack, markPerf]);
 
   const cur = REGION[language] ?? REGION.en;
   const copy = VSTATE_COPY[vs];
@@ -366,6 +449,7 @@ export function LeadQualView({
       </footer>
 
       {err && <div className="errbar">{err}</div>}
+      {perfEnabled && <pre className="perf-log">{perfLines.join('\n')}</pre>}
     </div>
   );
 }
