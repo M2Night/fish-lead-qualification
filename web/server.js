@@ -5,11 +5,13 @@
  *
  * Responsibilities:
  *   - Serve the static demo at `public/index.html`.
- *   - POST /api/session → mint a participant token + dispatch the `lead-qual`
- *     agent with `{ language, voice }` metadata, returning { livekitUrl, roomName, token }.
+ *   - POST /api/session → mint a participant token whose LiveKit RoomConfiguration
+ *     AUTO-DISPATCHES the `lead-qual` agent (with `{ language, voice, trace }` metadata)
+ *     when the room is created. Returns { livekitUrl, roomName, token, trace, timing }.
  *
- * LiveKit API keys stay server-side (read from env); the browser only ever
- * receives a short-lived participant JWT.
+ * The agent dispatch rides in the token (no separate AgentDispatchClient call) — the
+ * official pattern used by the sibling Fish demos. LiveKit API keys stay server-side;
+ * the browser only ever receives a short-lived participant JWT.
  */
 
 require("dotenv").config();
@@ -17,7 +19,11 @@ require("dotenv").config();
 const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
-const { AccessToken, AgentDispatchClient } = require("livekit-server-sdk");
+const {
+  AccessToken,
+  RoomConfiguration,
+  RoomAgentDispatch,
+} = require("livekit-server-sdk");
 
 const AGENT_NAME = "lead-qual"; // must match the worker's registered agent_name (CONTRACT.md)
 const PORT = Number(process.env.PORT) || 3000;
@@ -41,7 +47,9 @@ function roomName() {
   return `lead-qual-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-async function createParticipantToken({ apiKey, apiSecret, room, identity }) {
+// Mint a participant token that ALSO auto-dispatches the lead-qual agent (with metadata)
+// via RoomConfiguration — LiveKit spawns the agent when the room is created on connect.
+async function createParticipantToken({ apiKey, apiSecret, room, identity, metadata }) {
   const at = new AccessToken(apiKey, apiSecret, {
     identity,
     name: "Prospect",
@@ -54,72 +62,14 @@ async function createParticipantToken({ apiKey, apiSecret, room, identity }) {
     canSubscribe: true, // hear the agent
     // no canPublishData: the client sends no data (conversation-only, no data channel)
   });
+  at.roomConfig = new RoomConfiguration({
+    agents: [new RoomAgentDispatch({ agentName: AGENT_NAME, metadata })],
+  });
   return at.toJwt();
-}
-
-async function dispatchAgent({ livekitUrl, apiKey, apiSecret, room, metadata }) {
-  const client = new AgentDispatchClient(livekitUrl, apiKey, apiSecret);
-  return client.createDispatch(room, AGENT_NAME, { metadata });
 }
 
 const app = express();
 app.use(express.json());
-
-// Prewarm: mint a participant token for a fresh room WITHOUT dispatching an agent, so the
-// browser can do the slow WebRTC connect BEFORE the user clicks. The agent is dispatched
-// later into this same room via /api/dispatch.
-app.post("/api/prewarm", async (_req, res) => {
-  try {
-    const { livekitUrl, apiKey, apiSecret } = requireLiveKitEnv();
-    const room = roomName();
-    const token = await createParticipantToken({
-      apiKey,
-      apiSecret,
-      room,
-      identity: `prospect-${crypto.randomUUID().slice(0, 8)}`,
-    });
-    res.json({ livekitUrl, roomName: room, token });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[/api/prewarm]", message);
-    res.status(500).json({ error: message });
-  }
-});
-
-// Dispatch the agent into an already-connected (prewarmed) room with the chosen options.
-app.post("/api/dispatch", async (req, res) => {
-  const t0 = Date.now();
-  const trace =
-    typeof req.body?.trace === "string" && req.body.trace.trim()
-      ? req.body.trace.trim().slice(0, 64)
-      : crypto.randomUUID().slice(0, 8);
-  try {
-    const { livekitUrl, apiKey, apiSecret } = requireLiveKitEnv();
-    const room = typeof req.body?.room === "string" ? req.body.room.trim() : "";
-    if (!room) throw new Error("room is required");
-    const requested =
-      typeof req.body?.language === "string"
-        ? req.body.language.trim().toLowerCase()
-        : "";
-    const language = SUPPORTED_LANGUAGES.has(requested) ? requested : "en";
-    const voice =
-      typeof req.body?.voice === "string" ? req.body.voice.trim().slice(0, 32) : "";
-    const metadata = JSON.stringify({ language, ...(voice ? { voice } : {}), trace });
-
-    const tDispatch = Date.now();
-    await dispatchAgent({ livekitUrl, apiKey, apiSecret, room, metadata });
-    const dispatch_ms = Date.now() - tDispatch;
-
-    console.log(
-      `[/api/dispatch] trace=${trace} room=${room} lang=${language} voice=${voice || "-"} dispatch_ms=${dispatch_ms}`,
-    );
-    res.json({ trace, timing: { dispatch_ms, total_ms: Date.now() - t0 } });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[/api/dispatch] trace=${trace}`, message);
-    res.status(500).json({ error: message });
-  }
-});
 
 app.post("/api/session", async (req, res) => {
   const t0 = Date.now();
@@ -138,20 +88,16 @@ app.post("/api/session", async (req, res) => {
         : "";
     const language = SUPPORTED_LANGUAGES.has(requested) ? requested : "en";
 
-    // Selected voice KEY (e.g. "koi" / "finn" / "marlin") — NOT a raw Fish id. Forwarded
-    // (trimmed) in dispatch metadata; the worker maps it to a real Fish voice_id from its
-    // server-side allowlist (voices.py) and falls back to a default on an unknown/missing
-    // value. Bounded to keep metadata small.
+    // Selected voice KEY (e.g. "koi" / "finn" / "marlin") — NOT a raw Fish id. The worker
+    // maps it to a real Fish voice_id from its server-side allowlist (voices.py) and falls
+    // back to a default on an unknown/missing value. Bounded to keep metadata small.
     const voice =
       typeof req.body?.voice === "string" ? req.body.voice.trim().slice(0, 32) : "";
 
     const room = roomName();
-    // web → worker session options; omit `voice` when absent to keep metadata clean.
+    // web → worker session options (carried in the agent-dispatch metadata); omit `voice`
+    // when absent to keep it clean.
     const metadata = JSON.stringify({ language, ...(voice ? { voice } : {}), trace });
-
-    const tDispatch = Date.now();
-    await dispatchAgent({ livekitUrl, apiKey, apiSecret, room, metadata });
-    const dispatch_ms = Date.now() - tDispatch;
 
     const tToken = Date.now();
     const token = await createParticipantToken({
@@ -159,20 +105,21 @@ app.post("/api/session", async (req, res) => {
       apiSecret,
       room,
       identity: `prospect-${crypto.randomUUID().slice(0, 8)}`,
+      metadata,
     });
     const token_ms = Date.now() - tToken;
 
     const total_ms = Date.now() - t0;
     console.log(
       `[/api/session] trace=${trace} lang=${language} voice=${voice || "-"} ` +
-        `dispatch_ms=${dispatch_ms} token_ms=${token_ms} total_ms=${total_ms}`,
+        `token_ms=${token_ms} total_ms=${total_ms} (auto-dispatch)`,
     );
     res.json({
       livekitUrl,
       roomName: room,
       token,
       trace,
-      timing: { dispatch_ms, token_ms, total_ms },
+      timing: { token_ms, total_ms },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

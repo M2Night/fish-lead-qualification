@@ -468,30 +468,8 @@ $('#agentAudio').addEventListener('playing',()=>{ if(tClick&&!firstAudioLogged){
 // firing before 'playing' means the browser blocked or starved playback, not our latency).
 ['play','waiting','stalled','error'].forEach(ev=>$('#agentAudio').addEventListener(ev,()=>{ if(tClick) plog('audio:'+ev); }));
 
-/* A pre-connected, AGENTLESS room whose WebRTC handshake (the ~2.5s chunk) is finished
-   before the user clicks. On click we just dispatch the agent into it → first audio is
-   dispatch+agent-join (~1-1.5s) instead of a cold connect (~3s). */
-let pre=null, preInFlight=false;
-const NOPREWARM=new URLSearchParams(location.search).has('noprewarm');  // A/B: ?noprewarm disables pre-connect
-async function prewarmRoom(){
-  if(NOPREWARM)return;   // pre-connect off → every call takes the old /api/session fallback path
-  if(pre && pre.room && pre.room.state==='connected')return;   // already have a good one
-  if(preInFlight)return;   // NOTE: allowed to run DURING a call — prewarms a spare 2nd
-                           // connection so the NEXT call is instant too.
-  if(pre){ try{pre.room.disconnect();}catch{} pre=null; }        // stale/dead → drop it
-  preInFlight=true;
-  try{
-    const s=await fetch('/api/prewarm',{method:'POST'}).then(r=>r.json());
-    if(!s||!s.token)throw new Error('prewarm failed');
-    const r=new Room({adaptiveStream:true,dynacast:true});
-    await r.connect(s.livekitUrl,s.token);
-    pre={room:r, roomName:s.roomName};
-    console.log('⏱ pre-connected room ready');
-  }catch{ pre=null; }
-  finally{ preInFlight=false; }
-}
-
-/* shared tail once the browser is in the connected room and the agent is dispatched */
+/* shared tail once the browser is in the connected room (the lead-qual agent is
+   auto-dispatched by the token's RoomConfiguration when the room is created). */
 async function finishConnected(){
   if(!agentReady){
     setState('cold');
@@ -514,8 +492,6 @@ async function finishConnected(){
   } else {
     showError('Microphone unavailable — you can hear the agent, but it can’t hear you.');
   }
-  prewarmRoom();   // start pre-connecting the NEXT room now (during this call) so a
-                   // back-to-back call is instant too
 }
 
 async function startCall(){
@@ -529,38 +505,23 @@ async function startCall(){
   lockPicker(true); setState('connecting');
   ensureCtx(); if(audioCtx.state==='suspended') audioCtx.resume();
   setTimeout(()=>{ if(starting && !agentReady) startRing(); }, 350);
-  const voiceKey=VOICE_STYLES[selVoice].key;
 
-  // Path 1: reuse the pre-connected room — WebRTC already done, just dispatch the agent.
-  if(pre && pre.room && pre.room.state==='connected'){
-    room=pre.room; const rn=pre.roomName; pre=null;
-    wireRoom(room); callActive=true; resetUI(); renderPicker(); $('#endCall').classList.add('show');
-    plog('using pre-connected room');
-    try{
-      const res=await fetch('/api/dispatch',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({room:rn, language:selLang, voice:voiceKey, trace})});
-      const d=await res.json(); if(!res.ok)throw new Error(d.error||'dispatch failed');
-      plog('dispatch sent'+(d.timing?` (dispatch ${d.timing.dispatch_ms}ms)`:''));
-    }catch(e){ setState('error','start failed'); showError(e.message||'Dispatch failed.'); teardown(); return; }
-    await finishConnected();
-    return;
-  }
-
-  // Path 2 (fallback): mint token + dispatch, then connect on the spot (pre wasn't ready).
+  // Mint a token whose RoomConfiguration auto-dispatches the lead-qual agent (with our
+  // {language, voice, trace} metadata) — no separate dispatch call. Then connect; LiveKit
+  // dispatches the agent as the room is created. (Fish demos use this official pattern.)
   let session;
   try{
     const res=await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({language:selLang, voice:voiceKey, trace})});
+      body:JSON.stringify({language:selLang, voice:VOICE_STYLES[selVoice].key, trace})});
     session=await res.json();
     if(!res.ok)throw new Error(session.error||'Failed to start session.');
   }catch(e){ setState('error','start failed'); showError(e.message||'Could not reach the session endpoint.');
     stopRing(); starting=false; lockPicker(false); return; }
-  plog('session api'+(session.timing?` (dispatch ${session.timing.dispatch_ms}ms · token ${session.timing.token_ms}ms)`:''));
+  plog('session api'+(session.timing?` (token ${session.timing.token_ms}ms)`:''));
 
   room=new Room({adaptiveStream:true,dynacast:true});
   wireRoom(room); callActive=true; resetUI(); renderPicker(); $('#endCall').classList.add('show');
   try{
-    try{ room.prepareConnection(session.livekitUrl,session.token); }catch{}
     await room.connect(session.livekitUrl,session.token);
     plog('room connected');
     for(const p of room.remoteParticipants.values()){if(isAgent(p)){markAgentReady();break;}}
@@ -615,7 +576,6 @@ function teardown(){
   $('#audioGate').classList.remove('show');
   setVoiceState('idle');
   document.querySelectorAll('.node').forEach(n=>n.className='node');
-  prewarmRoom();   // pre-connect a fresh room so the NEXT call skips the WebRTC handshake
 }
 async function endCall(){
   if(!room){teardown();setState('ended');return;}
@@ -629,20 +589,12 @@ $('#voices').addEventListener('click',e=>{const b=e.target.closest('.vchip'); if
 $('#regionBtn').addEventListener('click',e=>{e.stopPropagation(); $('#regionMenu').classList.toggle('open');});
 $('#regionMenu').addEventListener('click',e=>{const b=e.target.closest('button'); if(b)selectRegion(b.dataset.rc);});
 document.addEventListener('click',e=>{ if(!e.target.closest('.region')) $('#regionMenu').classList.remove('open'); });
-window.addEventListener('beforeunload',()=>{ if(room)room.disconnect(); if(pre&&pre.room)pre.room.disconnect(); });
-// Re-prewarm when the tab is refocused — a long-idle tab's pre-connected room gets dropped
-// (browser suspend / LiveKit idle), so a returning user would otherwise fall back to the
-// slow path on their first click. prewarmRoom() no-ops if a good room is already ready.
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) prewarmRoom(); });
+window.addEventListener('beforeunload',()=>{ if(room)room.disconnect(); });
 
 /* boot */
 renderPicker();
 resetUI(); setState('idle'); setVoiceState('idle');
 fitCanvas(); draw(); stateLoop();
-
-/* Pre-connect an agentless room at page load so the WebRTC handshake (the ~2.5s chunk) is
-   done before the user clicks; on click we just dispatch the agent into it. */
-prewarmRoom();
 </script>
 </body>
 </html>
