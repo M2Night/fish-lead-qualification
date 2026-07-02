@@ -474,7 +474,8 @@ $('#agentAudio').addEventListener('playing',()=>{ if(tClick&&!firstAudioLogged){
 let pre=null, preInFlight=false;
 async function prewarmRoom(){
   if(pre && pre.room && pre.room.state==='connected')return;   // already have a good one
-  if(preInFlight||callActive)return;
+  if(preInFlight)return;   // NOTE: allowed to run DURING a call — prewarms a spare 2nd
+                           // connection so the NEXT call is instant too.
   if(pre){ try{pre.room.disconnect();}catch{} pre=null; }        // stale/dead → drop it
   preInFlight=true;
   try{
@@ -511,6 +512,8 @@ async function finishConnected(){
   } else {
     showError('Microphone unavailable — you can hear the agent, but it can’t hear you.');
   }
+  prewarmRoom();   // start pre-connecting the NEXT room now (during this call) so a
+                   // back-to-back call is instant too
 }
 
 async function startCall(){
@@ -538,7 +541,6 @@ async function startCall(){
       plog('dispatch sent'+(d.timing?` (dispatch ${d.timing.dispatch_ms}ms)`:''));
     }catch(e){ setState('error','start failed'); showError(e.message||'Dispatch failed.'); teardown(); return; }
     await finishConnected();
-    prewarmRoom();   // ready a fresh room for the next call
     return;
   }
 
