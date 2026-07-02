@@ -198,13 +198,14 @@ export function LeadQualView({
     return () => document.removeEventListener('click', onDoc);
   }, [menuOpen]);
 
-  // 'failed' is a terminal agent state (SDK) — surface it and tear the session down
-  // so the picker unlocks and the user can retry.
+  // 'failed' is a terminal agent state (SDK) — surface it, but do NOT auto-end():
+  // during a shaky cross-Pacific connect the SDK can briefly report 'failed', and
+  // calling end() here tore live calls down in <1s (CLIENT_INITIATED disconnect seen
+  // in the worker logs). Just show the error; the picker unlocks on its own once the
+  // session settles to disconnected, and the user can retry with the End button.
   useEffect(() => {
     if (state !== 'failed') return;
     setErr('The agent failed to connect. Please try again.');
-    void end();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
   // Auto-clear a transient error after a few seconds.
