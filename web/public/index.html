@@ -184,8 +184,9 @@
           </div>
           <div class="pick-hint" id="pickHint">Pick a voice to start</div>
           <div class="voices" id="voices"></div>
-          <button class="hangup" id="endCall">■ End call</button>
         </div>
+        <!-- OUTSIDE #picker: locking the picker (pointer-events:none) must not disable End call -->
+        <button class="hangup" id="endCall">■ End call</button>
 
         <canvas id="wave"></canvas>
         <div class="vstate" id="vstate">
@@ -247,7 +248,7 @@ const VOICE_STYLES=[
   {key:'marlin', name:'Marlin', hue:'#c07b2f'},
 ];
 
-let selLang='en', selVoice=0, starting=false, pickerLocked=false, pickerFrozen=false;
+let selLang='en', selVoice=0, starting=false, pickerLocked=false;
 
 /* operator / headset glyph — reads as "a support voice you can call" */
 const OP_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="2.5" y="12.5" width="4.5" height="7" rx="2.2"/><rect x="17" y="12.5" width="4.5" height="7" rx="2.2"/><path d="M20 19.5v.5a3 3 0 0 1-3 3h-3"/></svg>';
@@ -255,11 +256,11 @@ function renderPicker(){
   const cur=REGIONS[selLang];
   $('#regionFlag').textContent=cur.flag;
   $('#regionLabel').textContent=`${cur.country} · ${cur.lang}`;
-  $('#pickHint').textContent = pickerFrozen
-    ? 'Refresh the page to try another language or voice'
+  $('#pickHint').textContent = callActive
+    ? 'On call — end the call to switch language or voice'
     : 'Pick an agent voice to start the call';
   $('#voices').innerHTML=VOICE_STYLES.map((v,i)=>{
-    const on=i===selVoice, go = pickerFrozen ? (on?'● selected':'') : 'Call';
+    const on=i===selVoice, go = callActive ? (on?'● on call':'') : 'Call';
     return `<button class="vchip${on?' on':''}" data-vi="${i}" style="--vc:${v.hue};--vcs:${v.hue}22" title="${v.name}">`
       +`<span class="vava">${OP_SVG}</span><span class="vn">${v.name}</span><span class="go">${go}</span></button>`;
   }).join('');
@@ -268,20 +269,20 @@ function renderPicker(){
   applyPickerLock();   // re-apply disabled state to freshly-rendered buttons
 }
 /* real disable (not just pointer-events) so keyboard users can't fire it either */
-function applyPickerLock(){ const dis=pickerLocked||pickerFrozen; const rb=$('#regionBtn'); if(rb) rb.disabled=dis;
-  document.querySelectorAll('.vchip').forEach(b=>{ b.disabled=dis; }); }
-function lockPicker(v){ pickerLocked=v; $('#picker').classList.toggle('locked',v||pickerFrozen); applyPickerLock(); }
+function applyPickerLock(){ const rb=$('#regionBtn'); if(rb) rb.disabled=pickerLocked;
+  document.querySelectorAll('.vchip').forEach(b=>{ b.disabled=pickerLocked; }); }
+function lockPicker(v){ pickerLocked=v; $('#picker').classList.toggle('locked',v); applyPickerLock(); }
 
-/* click a voice = START the call. Once a call has started the picker is FROZEN for the
-   page session (realtime.ai-style): to try another language/voice, refresh the page. This
-   removes the mid-call reconnect churn entirely (no more rapid room create/destroy). */
+/* click a voice = START the call. The picker is LOCKED for the whole call (no mid-call
+   switching → no reconnect churn), then UNLOCKS when the call ends — so you can pick a
+   different language/voice and call again, no page refresh needed. */
 function clickVoice(i){
-  if(pickerFrozen||starting)return;
+  if(callActive||starting)return;
   selVoice=i; renderPicker(); startCall();
 }
 function selectRegion(code){
   $('#regionMenu').classList.remove('open');
-  if(pickerFrozen||starting)return;
+  if(callActive||starting)return;
   if(!REGIONS[code]||code===selLang)return;
   selLang=code; selVoice=0; renderPicker();
 }
@@ -448,7 +449,8 @@ const AGENT_READY_TIMEOUT_MS=30000;
 function isAgent(p){return !!p&&(p.isAgent||(p.identity||'').toLowerCase().includes('agent')||(p.identity||'').toLowerCase().includes('lead-qual'));}
 function markAgentReady(){if(agentReady)return;agentReady=true;
   if(agentReadyTimer){clearTimeout(agentReadyTimer);agentReadyTimer=null;}
-  stopRing(); starting=false; setState('connected'); lockPicker(false); renderPicker(); playJoinSound();}
+  // keep the picker LOCKED for the live call (unlocks on teardown when the call ends)
+  stopRing(); starting=false; setState('connected'); lockPicker(true); renderPicker(); playJoinSound();}
 
 /* ---- startup-latency instrumentation (DevTools console, or add ?perf to the URL for an
    on-screen readout you can screenshot) ---- */
@@ -469,7 +471,6 @@ $('#agentAudio').addEventListener('playing',()=>{ if(tClick&&!firstAudioLogged){
 async function startCall(){
   if(callActive||starting)return;   // real re-entry guard (keyboard + double-tap safe)
   starting=true;
-  pickerFrozen=true;                 // realtime.ai-style: lock language+voice until refresh
   tClick=performance.now(); firstAudioLogged=false; firstEnergyLogged=false;
   if(perfEl) perfEl.textContent='';
   const trace=(window.crypto&&crypto.randomUUID?crypto.randomUUID():String(Math.random())).slice(0,8);
