@@ -65,6 +65,12 @@ async function dispatchAgent({ livekitUrl, apiKey, apiSecret, room, metadata }) 
 const app = express();
 app.use(express.json());
 
+// Public LiveKit URL (a wss:// address, not a secret) so the client can prewarm the
+// connection (DNS/TLS/region) at page load, before the user clicks call.
+app.get("/api/config", (_req, res) => {
+  res.json({ livekitUrl: process.env.LIVEKIT_URL || "" });
+});
+
 app.post("/api/session", async (req, res) => {
   const t0 = Date.now();
   // Trace id to stitch browser → server → worker timings. Reuse the client's if given.

@@ -598,6 +598,14 @@ window.addEventListener('beforeunload',()=>{ if(room)room.disconnect(); });
 renderPicker();
 resetUI(); setState('idle'); setVoiceState('idle');
 fitCanvas(); draw(); stateLoop();
+
+/* Prewarm the LiveKit network path (DNS/TLS/region selection) at page load, so the
+   eventual room.connect() — the single biggest chunk of click→first-audio — starts warm.
+   Uses a throwaway Room just to warm the client's region cache. Best-effort. */
+(async()=>{ try{
+  const cfg=await fetch('/api/config').then(r=>r.json());
+  if(cfg&&cfg.livekitUrl){ await new Room().prepareConnection(cfg.livekitUrl); console.log('⏱ prewarmed LiveKit path'); }
+}catch{} })();
 </script>
 </body>
 </html>
