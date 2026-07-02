@@ -18,7 +18,6 @@ LLM / Fish s2.1-pro TTS / multilingual turn detection) over LiveKit.
 | Path | What |
 |------|------|
 | `web-next/` | Next.js 15 call UI (`@livekit/components-react`) + the `/api/token` dispatch endpoint. |
-| `web/` | **(legacy)** the original static/Express client; superseded by `web-next/`, kept for history. |
 | `CONTRACT.md` | The worker ↔ web data contract. |
 | `worker/` | **(moved)** now `agent-demo-core/agents/lead_qual/`; kept here for history. |
 
