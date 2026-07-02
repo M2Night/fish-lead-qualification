@@ -65,10 +65,60 @@ async function dispatchAgent({ livekitUrl, apiKey, apiSecret, room, metadata }) 
 const app = express();
 app.use(express.json());
 
-// Public LiveKit URL (a wss:// address, not a secret) so the client can prewarm the
-// connection (DNS/TLS/region) at page load, before the user clicks call.
-app.get("/api/config", (_req, res) => {
-  res.json({ livekitUrl: process.env.LIVEKIT_URL || "" });
+// Prewarm: mint a participant token for a fresh room WITHOUT dispatching an agent, so the
+// browser can do the slow WebRTC connect BEFORE the user clicks. The agent is dispatched
+// later into this same room via /api/dispatch.
+app.post("/api/prewarm", async (_req, res) => {
+  try {
+    const { livekitUrl, apiKey, apiSecret } = requireLiveKitEnv();
+    const room = roomName();
+    const token = await createParticipantToken({
+      apiKey,
+      apiSecret,
+      room,
+      identity: `prospect-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    res.json({ livekitUrl, roomName: room, token });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("[/api/prewarm]", message);
+    res.status(500).json({ error: message });
+  }
+});
+
+// Dispatch the agent into an already-connected (prewarmed) room with the chosen options.
+app.post("/api/dispatch", async (req, res) => {
+  const t0 = Date.now();
+  const trace =
+    typeof req.body?.trace === "string" && req.body.trace.trim()
+      ? req.body.trace.trim().slice(0, 64)
+      : crypto.randomUUID().slice(0, 8);
+  try {
+    const { livekitUrl, apiKey, apiSecret } = requireLiveKitEnv();
+    const room = typeof req.body?.room === "string" ? req.body.room.trim() : "";
+    if (!room) throw new Error("room is required");
+    const requested =
+      typeof req.body?.language === "string"
+        ? req.body.language.trim().toLowerCase()
+        : "";
+    const language = SUPPORTED_LANGUAGES.has(requested) ? requested : "en";
+    const voice =
+      typeof req.body?.voice === "string" ? req.body.voice.trim().slice(0, 32) : "";
+    const metadata = JSON.stringify({ language, ...(voice ? { voice } : {}), trace });
+
+    const tDispatch = Date.now();
+    await dispatchAgent({ livekitUrl, apiKey, apiSecret, room, metadata });
+    const dispatch_ms = Date.now() - tDispatch;
+
+    console.log(
+      `[/api/dispatch] trace=${trace} room=${room} lang=${language} voice=${voice || "-"} dispatch_ms=${dispatch_ms}`,
+    );
+    res.json({ trace, timing: { dispatch_ms, total_ms: Date.now() - t0 } });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[/api/dispatch] trace=${trace}`, message);
+    res.status(500).json({ error: message });
+  }
 });
 
 app.post("/api/session", async (req, res) => {
