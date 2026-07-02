@@ -628,6 +628,10 @@ $('#regionBtn').addEventListener('click',e=>{e.stopPropagation(); $('#regionMenu
 $('#regionMenu').addEventListener('click',e=>{const b=e.target.closest('button'); if(b)selectRegion(b.dataset.rc);});
 document.addEventListener('click',e=>{ if(!e.target.closest('.region')) $('#regionMenu').classList.remove('open'); });
 window.addEventListener('beforeunload',()=>{ if(room)room.disconnect(); if(pre&&pre.room)pre.room.disconnect(); });
+// Re-prewarm when the tab is refocused — a long-idle tab's pre-connected room gets dropped
+// (browser suspend / LiveKit idle), so a returning user would otherwise fall back to the
+// slow path on their first click. prewarmRoom() no-ops if a good room is already ready.
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) prewarmRoom(); });
 
 /* boot */
 renderPicker();
