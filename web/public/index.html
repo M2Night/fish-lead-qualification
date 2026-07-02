@@ -472,7 +472,9 @@ $('#agentAudio').addEventListener('playing',()=>{ if(tClick&&!firstAudioLogged){
    before the user clicks. On click we just dispatch the agent into it → first audio is
    dispatch+agent-join (~1-1.5s) instead of a cold connect (~3s). */
 let pre=null, preInFlight=false;
+const NOPREWARM=new URLSearchParams(location.search).has('noprewarm');  // A/B: ?noprewarm disables pre-connect
 async function prewarmRoom(){
+  if(NOPREWARM)return;   // pre-connect off → every call takes the old /api/session fallback path
   if(pre && pre.room && pre.room.state==='connected')return;   // already have a good one
   if(preInFlight)return;   // NOTE: allowed to run DURING a call — prewarms a spare 2nd
                            // connection so the NEXT call is instant too.
