@@ -247,7 +247,7 @@ const VOICE_STYLES=[
   {key:'marlin', name:'Marlin', hue:'#c07b2f'},
 ];
 
-let selLang='en', selVoice=0, switching=false, starting=false, pickerLocked=false;
+let selLang='en', selVoice=0, starting=false, pickerLocked=false, pickerFrozen=false;
 
 /* operator / headset glyph — reads as "a support voice you can call" */
 const OP_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="2.5" y="12.5" width="4.5" height="7" rx="2.2"/><rect x="17" y="12.5" width="4.5" height="7" rx="2.2"/><path d="M20 19.5v.5a3 3 0 0 1-3 3h-3"/></svg>';
@@ -255,9 +255,11 @@ function renderPicker(){
   const cur=REGIONS[selLang];
   $('#regionFlag').textContent=cur.flag;
   $('#regionLabel').textContent=`${cur.country} · ${cur.lang}`;
-  $('#pickHint').textContent = callActive ? 'Live · tap another agent to switch' : 'Pick an agent voice to start the call';
+  $('#pickHint').textContent = pickerFrozen
+    ? 'Refresh the page to try another language or voice'
+    : 'Pick an agent voice to start the call';
   $('#voices').innerHTML=VOICE_STYLES.map((v,i)=>{
-    const on=i===selVoice, go = (callActive&&on) ? '● on call' : (callActive ? 'switch' : 'Call');
+    const on=i===selVoice, go = pickerFrozen ? (on?'● selected':'') : 'Call';
     return `<button class="vchip${on?' on':''}" data-vi="${i}" style="--vc:${v.hue};--vcs:${v.hue}22" title="${v.name}">`
       +`<span class="vava">${OP_SVG}</span><span class="vn">${v.name}</span><span class="go">${go}</span></button>`;
   }).join('');
@@ -266,29 +268,22 @@ function renderPicker(){
   applyPickerLock();   // re-apply disabled state to freshly-rendered buttons
 }
 /* real disable (not just pointer-events) so keyboard users can't fire it either */
-function applyPickerLock(){ const rb=$('#regionBtn'); if(rb) rb.disabled=pickerLocked;
-  document.querySelectorAll('.vchip').forEach(b=>{ b.disabled=pickerLocked; }); }
-function lockPicker(v){ pickerLocked=v; $('#picker').classList.toggle('locked',v); applyPickerLock(); }
+function applyPickerLock(){ const dis=pickerLocked||pickerFrozen; const rb=$('#regionBtn'); if(rb) rb.disabled=dis;
+  document.querySelectorAll('.vchip').forEach(b=>{ b.disabled=dis; }); }
+function lockPicker(v){ pickerLocked=v; $('#picker').classList.toggle('locked',v||pickerFrozen); applyPickerLock(); }
 
-/* click a voice = START (idle) or SWITCH (in call). No separate Start button. */
+/* click a voice = START the call. Once a call has started the picker is FROZEN for the
+   page session (realtime.ai-style): to try another language/voice, refresh the page. This
+   removes the mid-call reconnect churn entirely (no more rapid room create/destroy). */
 function clickVoice(i){
-  if(starting||switching)return;   // ignore taps/Enter while dialing or switching
-  if(callActive){ if(i===selVoice)return; selVoice=i; renderPicker(); reconnect(); }
-  else{ selVoice=i; renderPicker(); startCall(); }
+  if(pickerFrozen||starting)return;
+  selVoice=i; renderPicker(); startCall();
 }
-function selectRegion(code){ if(starting||switching){ $('#regionMenu').classList.remove('open'); return; }
-  if(!REGIONS[code]||code===selLang){ $('#regionMenu').classList.remove('open'); return; }
-  selLang=code; selVoice=0; renderPicker(); $('#regionMenu').classList.remove('open'); if(callActive) reconnect(); }
-
-/* v1 switch = fast reconnect with the new {language, voice} dispatch metadata */
-async function reconnect(){
-  if(switching)return; switching=true;
-  setState('connecting','switching…'); lockPicker(true);
-  endedByUser=true;
-  try{ if(room) await room.disconnect(); }catch{}
-  teardown();
-  switching=false;
-  startCall();
+function selectRegion(code){
+  $('#regionMenu').classList.remove('open');
+  if(pickerFrozen||starting)return;
+  if(!REGIONS[code]||code===selLang)return;
+  selLang=code; selVoice=0; renderPicker();
 }
 
 /* ============================================================
@@ -455,9 +450,15 @@ function markAgentReady(){if(agentReady)return;agentReady=true;
   if(agentReadyTimer){clearTimeout(agentReadyTimer);agentReadyTimer=null;}
   stopRing(); starting=false; setState('connected'); lockPicker(false); renderPicker(); playJoinSound();}
 
-/* ---- startup-latency instrumentation (temporary; open DevTools console) ---- */
+/* ---- startup-latency instrumentation (DevTools console, or add ?perf to the URL for an
+   on-screen readout you can screenshot) ---- */
 let tClick=0, firstAudioLogged=false, firstEnergyLogged=false;
-function plog(name){ if(tClick) console.log(`⏱ ${name}`, Math.round(performance.now()-tClick)+'ms'); }
+const perfEl=(()=>{ if(!new URLSearchParams(location.search).has('perf')) return null;
+  const el=document.createElement('pre');
+  el.style.cssText='position:fixed;left:10px;bottom:10px;z-index:99;margin:0;font:11px/1.45 monospace;color:#15171c;background:rgba(255,255,255,.92);border:1px solid #ccc;border-radius:8px;padding:8px 10px;max-width:360px;white-space:pre-wrap;pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.12)';
+  document.body.appendChild(el); return el; })();
+function plog(name){ if(!tClick) return; const ms=Math.round(performance.now()-tClick);
+  console.log(`⏱ ${name}`, ms+'ms'); if(perfEl) perfEl.textContent += `${String(ms).padStart(5)}ms  ${name}\n`; }
 // Canonical "user actually hears it" mark: the <audio> element starts playing (analyser
 // energy below is only auxiliary).
 $('#agentAudio').addEventListener('playing',()=>{ if(tClick&&!firstAudioLogged){ firstAudioLogged=true; plog('AUDIO PLAYING (first heard)'); } });
@@ -468,7 +469,9 @@ $('#agentAudio').addEventListener('playing',()=>{ if(tClick&&!firstAudioLogged){
 async function startCall(){
   if(callActive||starting)return;   // real re-entry guard (keyboard + double-tap safe)
   starting=true;
+  pickerFrozen=true;                 // realtime.ai-style: lock language+voice until refresh
   tClick=performance.now(); firstAudioLogged=false; firstEnergyLogged=false;
+  if(perfEl) perfEl.textContent='';
   const trace=(window.crypto&&crypto.randomUUID?crypto.randomUUID():String(Math.random())).slice(0,8);
   plog('click · trace='+trace);
   endedByUser=false; agentReady=false;
@@ -479,12 +482,6 @@ async function startCall(){
   // connect we skip it entirely. Cancelled the instant the agent is ready.
   setTimeout(()=>{ if(starting && !agentReady) startRing(); }, 350);
 
-  // Acquire the mic IN PARALLEL with session+connect. The opener is agent→browser, so
-  // hearing the first line must NOT wait on local mic permission/device init.
-  const micP = navigator.mediaDevices.getUserMedia({audio:true})
-    .then(s=>{ micStream=s; plog('mic ready'); return s; })
-    .catch(()=>{ plog('mic FAILED'); return null; });
-
   let session;
   try{
     const res=await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -492,8 +489,7 @@ async function startCall(){
     session=await res.json();
     if(!res.ok)throw new Error(session.error||'Failed to start session.');
   }catch(e){ setState('error','start failed'); showError(e.message||'Could not reach the session endpoint.');
-    stopRing(); starting=false; lockPicker(false);
-    micP.then(s=>{ if(s) s.getTracks().forEach(t=>t.stop()); micStream=null; }); return; }
+    stopRing(); starting=false; lockPicker(false); return; }
   plog('session api'+(session.timing?` (dispatch ${session.timing.dispatch_ms}ms · token ${session.timing.token_ms}ms)`:''));
 
   room=new Room({adaptiveStream:true,dynacast:true});
@@ -518,9 +514,12 @@ async function startCall(){
     }
     primeAudio();   // unblock <audio> playback early — the opener doesn't need the mic
 
-    // Publish the mic AFTER connect — it must not gate the opener. If the mic failed, keep
-    // the call (user can still hear the agent) but warn that it can't hear them.
-    const s = await micP;
+    // Open the mic only AFTER connecting (realtime.ai-style) — the opener is agent→browser,
+    // so the mic isn't needed to hear it, and this keeps the mic prompt/indicator off the
+    // pre-connect moment. By the time the opener finishes the mic is ready to publish.
+    let s=null;
+    try{ s=await navigator.mediaDevices.getUserMedia({audio:true}); micStream=s; plog('mic ready'); }
+    catch{ plog('mic FAILED'); }
     if(s){
       await room.localParticipant.setMicrophoneEnabled(true);
       const micTrack=s.getAudioTracks()[0];
