@@ -429,7 +429,8 @@ function stateLoop(){
   const aE=agentData?energy(agentAnalyser,agentData):0;
   const mE=micData?energy(micAnalyser,micData):0;
 
-  if(aE>0.012){ setVoiceState('speaking'); awaitingAgent=false; }
+  if(aE>0.012){ setVoiceState('speaking'); awaitingAgent=false;
+    if(!firstEnergyLogged){ firstEnergyLogged=true; plog('agent audio energy (analyser · aux)'); } }
   else if(mE>0.02){ setVoiceState('listening'); awaitingAgent=true; }
   else if(awaitingAgent){ setVoiceState('thinking'); }
   else setVoiceState('idle');
@@ -454,28 +455,46 @@ function markAgentReady(){if(agentReady)return;agentReady=true;
   if(agentReadyTimer){clearTimeout(agentReadyTimer);agentReadyTimer=null;}
   stopRing(); starting=false; setState('connected'); lockPicker(false); renderPicker(); playJoinSound();}
 
+/* ---- startup-latency instrumentation (temporary; open DevTools console) ---- */
+let tClick=0, firstAudioLogged=false, firstEnergyLogged=false;
+function plog(name){ if(tClick) console.log(`⏱ ${name}`, Math.round(performance.now()-tClick)+'ms'); }
+// Canonical "user actually hears it" mark: the <audio> element starts playing (analyser
+// energy below is only auxiliary).
+$('#agentAudio').addEventListener('playing',()=>{ if(tClick&&!firstAudioLogged){ firstAudioLogged=true; plog('AUDIO PLAYING (first heard)'); } });
+// Extra <audio> lifecycle marks — diagnose autoplay gating / stalls (waiting/stalled/error
+// firing before 'playing' means the browser blocked or starved playback, not our latency).
+['play','waiting','stalled','error'].forEach(ev=>$('#agentAudio').addEventListener(ev,()=>{ if(tClick) plog('audio:'+ev); }));
+
 async function startCall(){
   if(callActive||starting)return;   // real re-entry guard (keyboard + double-tap safe)
   starting=true;
+  tClick=performance.now(); firstAudioLogged=false; firstEnergyLogged=false;
+  const trace=(window.crypto&&crypto.randomUUID?crypto.randomUUID():String(Math.random())).slice(0,8);
+  plog('click · trace='+trace);
   endedByUser=false; agentReady=false;
   lockPicker(true);
   setState('connecting');
   ensureCtx(); if(audioCtx.state==='suspended') audioCtx.resume();
-  startRing();   // ring the instant you click — before mic/dispatch awaits
+  // Wait ~350ms before the ringback — an immediate beep feels abrupt, and on a fast
+  // connect we skip it entirely. Cancelled the instant the agent is ready.
+  setTimeout(()=>{ if(starting && !agentReady) startRing(); }, 350);
 
-  try{ micStream=await navigator.mediaDevices.getUserMedia({audio:true}); }
-  catch(e){ setState('error','mic blocked'); showError('Microphone permission denied — allow the mic and retry.');
-    stopRing(); starting=false; lockPicker(false); return; }
+  // Acquire the mic IN PARALLEL with session+connect. The opener is agent→browser, so
+  // hearing the first line must NOT wait on local mic permission/device init.
+  const micP = navigator.mediaDevices.getUserMedia({audio:true})
+    .then(s=>{ micStream=s; plog('mic ready'); return s; })
+    .catch(()=>{ plog('mic FAILED'); return null; });
 
   let session;
   try{
     const res=await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({language:selLang, voice:VOICE_STYLES[selVoice].key})});
+      body:JSON.stringify({language:selLang, voice:VOICE_STYLES[selVoice].key, trace})});
     session=await res.json();
     if(!res.ok)throw new Error(session.error||'Failed to start session.');
   }catch(e){ setState('error','start failed'); showError(e.message||'Could not reach the session endpoint.');
     stopRing(); starting=false; lockPicker(false);
-    micStream.getTracks().forEach(t=>t.stop()); micStream=null; return; }
+    micP.then(s=>{ if(s) s.getTracks().forEach(t=>t.stop()); micStream=null; }); return; }
+  plog('session api'+(session.timing?` (dispatch ${session.timing.dispatch_ms}ms · token ${session.timing.token_ms}ms)`:''));
 
   room=new Room({adaptiveStream:true,dynacast:true});
   wireRoom(room);
@@ -483,7 +502,11 @@ async function startCall(){
   $('#endCall').classList.add('show');
 
   try{
+    // Warm DNS/TLS/SFU config for the upcoming connect (LiveKit JS SDK). Fire-and-forget —
+    // do NOT await it, so a slow/hung warm-up can't sit on the critical path before connect.
+    try{ room.prepareConnection(session.livekitUrl,session.token); plog('prepareConnection (async)'); }catch{}
     await room.connect(session.livekitUrl,session.token);
+    plog('room connected');
     for(const p of room.remoteParticipants.values()){if(isAgent(p)){markAgentReady();break;}}
     if(!agentReady){
       setState('cold');
@@ -493,12 +516,19 @@ async function startCall(){
           endedByUser=true; room.disconnect(); }
       },AGENT_READY_TIMEOUT_MS);
     }
-    await room.localParticipant.setMicrophoneEnabled(true);
-    // tap the real local mic track for the waveform
-    const micTrack=micStream&&micStream.getAudioTracks()[0];
-    if(micTrack){ const a=attachAnalyser(micTrack); micSrc=a.source; micAnalyser=a.analyser; micData=new Uint8Array(micAnalyser.fftSize); }
-    setNode('mic','on');
-    primeAudio();
+    primeAudio();   // unblock <audio> playback early — the opener doesn't need the mic
+
+    // Publish the mic AFTER connect — it must not gate the opener. If the mic failed, keep
+    // the call (user can still hear the agent) but warn that it can't hear them.
+    const s = await micP;
+    if(s){
+      await room.localParticipant.setMicrophoneEnabled(true);
+      const micTrack=s.getAudioTracks()[0];
+      if(micTrack){ const a=attachAnalyser(micTrack); micSrc=a.source; micAnalyser=a.analyser; micData=new Uint8Array(micAnalyser.fftSize); }
+      setNode('mic','on'); plog('mic published');
+    } else {
+      showError('Microphone unavailable — you can hear the agent, but it can’t hear you.');
+    }
   }catch(e){ setState('error','connect failed'); showError(e.message||'LiveKit connection failed.'); teardown(); }
 }
 
@@ -510,6 +540,7 @@ function wireRoom(r){
    })
    .on(RoomEvent.TrackSubscribed,(track,pub,participant)=>{
       if(track.kind==='audio'&&isAgent(participant)){
+        plog('agent audio track subscribed');
         track.attach($('#agentAudio')); markAgentReady();
         // tap the real agent audio track for the waveform + speaking detection
         const mst=track.mediaStreamTrack;

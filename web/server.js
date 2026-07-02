@@ -66,6 +66,12 @@ const app = express();
 app.use(express.json());
 
 app.post("/api/session", async (req, res) => {
+  const t0 = Date.now();
+  // Trace id to stitch browser → server → worker timings. Reuse the client's if given.
+  const trace =
+    typeof req.body?.trace === "string" && req.body.trace.trim()
+      ? req.body.trace.trim().slice(0, 64)
+      : crypto.randomUUID().slice(0, 8);
   try {
     const { livekitUrl, apiKey, apiSecret } = requireLiveKitEnv();
 
@@ -85,21 +91,36 @@ app.post("/api/session", async (req, res) => {
 
     const room = roomName();
     // web → worker session options; omit `voice` when absent to keep metadata clean.
-    const metadata = JSON.stringify(voice ? { language, voice } : { language });
+    const metadata = JSON.stringify({ language, ...(voice ? { voice } : {}), trace });
 
+    const tDispatch = Date.now();
     await dispatchAgent({ livekitUrl, apiKey, apiSecret, room, metadata });
+    const dispatch_ms = Date.now() - tDispatch;
 
+    const tToken = Date.now();
     const token = await createParticipantToken({
       apiKey,
       apiSecret,
       room,
       identity: `prospect-${crypto.randomUUID().slice(0, 8)}`,
     });
+    const token_ms = Date.now() - tToken;
 
-    res.json({ livekitUrl, roomName: room, token });
+    const total_ms = Date.now() - t0;
+    console.log(
+      `[/api/session] trace=${trace} lang=${language} voice=${voice || "-"} ` +
+        `dispatch_ms=${dispatch_ms} token_ms=${token_ms} total_ms=${total_ms}`,
+    );
+    res.json({
+      livekitUrl,
+      roomName: room,
+      token,
+      trace,
+      timing: { dispatch_ms, token_ms, total_ms },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[/api/session]", message);
+    console.error(`[/api/session] trace=${trace}`, message);
     res.status(500).json({ error: message });
   }
 });
