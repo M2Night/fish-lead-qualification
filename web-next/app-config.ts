@@ -50,9 +50,9 @@ export interface AppConfig {
 
 export const APP_CONFIG_DEFAULTS: AppConfig = {
   companyName: 'Fish Lead Qualification',
-  pageTitle: 'Fish Lead Qualification',
+  pageTitle: 'Realtime Voice Lead Qualification',
   pageDescription:
-    'Talk to a LiveKit voice agent for lead qualification. Pick a voice and a language, then start the call.',
+    "A live demo of Fish Audio's realtime voice — talk to a sales agent in your language and voice",
 
   supportsVideoInput: false,
   supportsScreenShare: false,

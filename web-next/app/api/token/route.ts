@@ -31,7 +31,12 @@ export const revalidate = 0;
 export async function POST(req: Request) {
   try {
     if (!LIVEKIT_URL || !API_KEY || !API_SECRET) {
-      throw new Error('LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET must be set.');
+      // Config error (no secrets leaked) — surface it so a missing .env.local is obvious.
+      console.error('[/api/token] missing LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET');
+      return new NextResponse(
+        'Server not configured: set LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET (web-next/.env.local).',
+        { status: 500 }
+      );
     }
 
     // Reject oversized bodies before parsing — we only need a tiny room_config.
