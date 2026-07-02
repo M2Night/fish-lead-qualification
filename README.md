@@ -1,8 +1,9 @@
 # Fish Lead Qualification — Voice Demo
 
 A standalone, polished voice demo: a prospect talks to **Fish**, a Fish-Audio-voiced
-agent that runs a natural sales-discovery conversation. The UI shows a live transcript
-and a language + voice picker — a **conversation-only** demo (no scorecard).
+agent that runs a natural sales-discovery conversation. The UI is a voice-forward hero
+with a language + voice picker and live pipeline lights — a **conversation-only** demo
+(no scorecard, no on-screen transcript).
 
 3 languages (English / Chinese / Japanese). Built on `agent-demo-core` (Deepgram STT /
 LLM / Fish s2.1-pro TTS / multilingual turn detection) over LiveKit.

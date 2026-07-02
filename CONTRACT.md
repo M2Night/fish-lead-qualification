@@ -20,11 +20,12 @@ The single interface both halves must agree on. The **worker** now lives in the
 This is a **conversation-only** discovery agent: there is **no scorecard / qualification
 data channel** and the agent calls no tools.
 
-## Web transcript rules
+## Transcription
 
-- **Strip emotion cues** from transcript text before display — the agent emits free-form
-  bracket cues like `[warm]`, `[confident]`, `[break]`. Strip any leading/inline `[...]`
-  of reasonable length: `text.replace(/\[[^\]\n]{0,40}\]/g, "")` then trim.
+There is **no on-screen transcript**. The web listens to `RoomEvent.TranscriptionReceived`
+only to flash the pipeline nodes and confirm the agent joined — it renders no caption, so
+no client-side emotion-cue stripping is needed. (The agent still emits Fish emotion cues
+like `[warm]` for TTS; they are never displayed.)
 
 ## Prompts
 

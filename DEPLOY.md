@@ -5,7 +5,7 @@ Two pieces, deployed separately:
 | Piece | Where | What it is |
 | --- | --- | --- |
 | `web/` | **Vercel** | static demo page + a tiny token/dispatch API (`/api/session`) |
-| `worker/` (incl. `worker/prompts/`) | **LiveKit Cloud Agents** | the `lead-qual` voice worker (Deepgram STT · Gemma/OpenRouter LLM · Fish TTS) |
+| `agent-demo-core/agents/lead_qual/` | **LiveKit Cloud Agents** | the `lead-qual` voice worker (Deepgram STT · Gemma LLM · Fish TTS). Deployed from the **agent-demo-core** repo root — this repo's `worker/` is retained for history only. |
 
 The browser only ever gets a short-lived LiveKit participant JWT. All provider keys
 live server-side (Vercel env for the web, LiveKit agent secrets for the worker).

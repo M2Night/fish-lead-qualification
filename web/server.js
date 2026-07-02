@@ -52,7 +52,7 @@ async function createParticipantToken({ apiKey, apiSecret, room, identity }) {
     roomJoin: true,
     canPublish: true, // publish mic audio
     canSubscribe: true, // hear the agent
-    canPublishData: true,
+    // no canPublishData: the client sends no data (conversation-only, no data channel)
   });
   return at.toJwt();
 }
