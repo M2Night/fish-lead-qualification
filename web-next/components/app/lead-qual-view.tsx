@@ -99,7 +99,10 @@ export function LeadQualView({
   const room = useRoomContext();
   const { mergedProps: audioGateProps } = useStartAudio({ room, props: {} });
 
-  const { isConnected, start, end } = session;
+  const { isConnected, start, end, prepareConnection } = session;
+  // -Infinity so the FIRST hover always warms — a 0 init would be wrongly throttled
+  // during the first 12s (performance.now() is still < 12000 right after load).
+  const lastWarmRef = useRef(Number.NEGATIVE_INFINITY);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -174,6 +177,19 @@ export function LeadQualView({
     } finally {
       setStarting(false);
     }
+  }
+
+  // Re-warm the connection the moment the user hovers the picker — just before they
+  // click. The SDK already prepareConnection()s once on mount (DNS/TLS/edge lookup), but
+  // that TLS goes idle if the user lingers; a hover re-warm keeps it hot at click time so
+  // room.connect() reuses a live path. Throttled so repeated hovers don't spam /api/token.
+  function warmConnection() {
+    if (callActive) return;
+    const now = performance.now();
+    if (now - lastWarmRef.current < 12_000) return;
+    lastWarmRef.current = now;
+    markPerf('prewarm connection');
+    void prepareConnection().catch(() => {});
   }
 
   // Click a voice = SELECT it, then start on the next render (so the fresh
@@ -333,7 +349,10 @@ export function LeadQualView({
         <div className="col voice-col">
           <div className="voice-body" style={{ ['--halo' as string]: String(halo) }}>
             {/* region × voice picker */}
-            <div className={callActive ? 'picker locked' : 'picker'}>
+            <div
+              className={callActive ? 'picker locked' : 'picker'}
+              onPointerEnter={warmConnection}
+            >
               <div className="region">
                 <button
                   className="region-btn"
