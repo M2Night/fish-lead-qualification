@@ -64,11 +64,11 @@ export const APP_CONFIG_DEFAULTS: AppConfig = {
   accentDark: '#1fd5f9',
   startButtonText: 'Start call',
 
-  // agent dispatch configuration — NAMED dispatch so per-session config (chosen
-  // voice / language) rides agentMetadata to the worker. Must match AGENT_NAME
-  // in the Python worker. Hardcoded default (not env-gated) so a missing env var
-  // can't silently fall back to auto-dispatch and break the metadata channel.
-  agentName: process.env.AGENT_NAME ?? 'lead-qual',
+  // Client-side SDK scaffolding only: the name the React SDK puts on its request so
+  // per-session config (chosen voice / language) rides agentMetadata. The signed
+  // dispatch is rebuilt SERVER-SIDE in /api/token with a hardcoded agentName, so this
+  // value is advisory — it must simply match the worker's registered agent_name.
+  agentName: 'lead-qual',
 
   // LiveKit Cloud Sandbox configuration
   sandboxId: undefined,

@@ -1,9 +1,9 @@
 # Fish Lead Qualification — Voice Demo
 
 A standalone, polished voice demo: a prospect talks to **Fish**, a Fish-Audio-voiced
-agent that runs a natural sales-discovery conversation. The UI is a voice-forward hero
-with a language + voice picker and live pipeline lights — a **conversation-only** demo
-(no scorecard, no on-screen transcript).
+agent that runs a natural sales-discovery conversation. The UI is a Next.js 15 app
+built on `@livekit/components-react`, with a language + voice picker — a
+**conversation-only** demo (no scorecard, no on-screen transcript).
 
 3 languages (English / Chinese / Japanese). Built on `agent-demo-core` (Deepgram STT /
 LLM / Fish s2.1-pro TTS / multilingual turn detection) over LiveKit.
@@ -17,7 +17,8 @@ LLM / Fish s2.1-pro TTS / multilingual turn detection) over LiveKit.
 
 | Path | What |
 |------|------|
-| `web/` | Static demo client (LiveKit) + a small token/dispatch endpoint. |
+| `web-next/` | Next.js 15 call UI (`@livekit/components-react`) + the `/api/token` dispatch endpoint. |
+| `web/` | **(legacy)** the original static/Express client; superseded by `web-next/`, kept for history. |
 | `CONTRACT.md` | The worker ↔ web data contract. |
 | `worker/` | **(moved)** now `agent-demo-core/agents/lead_qual/`; kept here for history. |
 
@@ -28,4 +29,4 @@ This is a **demo / lead-gen product**, not the agent-creation platform. It share
 
 ## Run
 
-See `worker/README.md` and `web/README.md`.
+See `agent-demo-core/agents/lead_qual/README.md` (worker) and `web-next/README.md` (frontend).

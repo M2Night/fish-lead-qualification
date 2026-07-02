@@ -11,7 +11,6 @@ import { ErrorBoundary } from '@/components/app/error-boundary';
 import { ViewController } from '@/components/app/view-controller';
 import { Toaster } from '@/components/ui/sonner';
 import { useAgentErrors } from '@/hooks/useAgentErrors';
-import { getSandboxTokenSource } from '@/lib/utils';
 
 function AppSetup() {
   useAgentErrors();
@@ -37,13 +36,11 @@ export function App({ appConfig }: AppProps) {
   // sidesteps the bug — its cache is empty, so it always fetches with the current
   // agentMetadata.
   const tokenSource = useMemo(() => {
-    return typeof process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT === 'string'
-      ? getSandboxTokenSource(appConfig)
-      : TokenSource.endpoint('/api/token');
+    return TokenSource.endpoint('/api/token');
     // `language`/`voice` are intentionally in the deps (not used in the body) to force
     // a fresh, empty-cache token source whenever the choice changes — see comment above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appConfig, language, voice]);
+  }, [language, voice]);
 
   const sessionOptions = useMemo(
     () => ({

@@ -4,7 +4,7 @@ Two pieces, deployed separately:
 
 | Piece | Where | What it is |
 | --- | --- | --- |
-| `web/` | **Vercel** | static demo page + a tiny token/dispatch API (`/api/session`) |
+| `web-next/` | **Vercel** | Next.js 15 app — LiveKit `@livekit/components-react` call UI + a token/dispatch API (`/api/token`) |
 | `agent-demo-core/agents/lead_qual/` | **LiveKit Cloud Agents** | the `lead-qual` voice worker (Deepgram STT · Gemma LLM · Fish TTS). Deployed from the **agent-demo-core** repo root — this repo's `worker/` is retained for history only. |
 
 The browser only ever gets a short-lived LiveKit participant JWT. All provider keys
@@ -14,22 +14,30 @@ live server-side (Vercel env for the web, LiveKit agent secrets for the worker).
 
 ## A. Web → Vercel
 
-The Express app is exported as a serverless function (`web/vercel.json`,
-`module.exports = app`), and `public/` ships with it.
+`web-next/` is a standard Next.js 15 app (`output: 'standalone'`); Vercel detects and
+builds it natively. The call UI is built on `@livekit/components-react`; the
+`/api/token` route mints the participant JWT and builds the agent dispatch server-side.
 
 1. Push this repo to GitHub (already done if you're reading this on GitHub).
 2. In Vercel: **Add New… → Project → Import** this repo.
-3. **Set Root Directory to `web`** (important — the app lives in `web/`, not the repo root).
-   Framework preset: **Other**. Leave build/output empty; `vercel.json` handles it.
+3. **Set Root Directory to `web-next`** (important — the app lives in `web-next/`, not the
+   repo root). Framework preset: **Next.js** (auto-detected). Leave build/output at defaults.
 4. Add Environment Variables (Production + Preview):
    - `LIVEKIT_URL` — `wss://<your-project>.livekit.cloud`
    - `LIVEKIT_API_KEY`
    - `LIVEKIT_API_SECRET`
-5. **Deploy.** Visit the URL; the page loads and "Start call" mints a token +
-   dispatches the `lead-qual` agent.
+5. **Deploy.** Visit the URL; the page loads and starting a call mints a token +
+   auto-dispatches the `lead-qual` agent.
 
 > The web app and the worker must point at the **same** LiveKit project (same
 > `LIVEKIT_URL` / key / secret), otherwise the dispatch lands nowhere.
+
+> **Security note — `/api/token` is public.** The route is intentionally
+> **unauthenticated and un-rate-limited** (an accepted risk for this open demo). It does
+> **not** trust the client's `room_config`: it reads only the `{ language, voice }` agent
+> metadata, validates it against an allowlist, and rebuilds the dispatch server-side with a
+> **hardcoded** agent name (`lead-qual`). Before any non-demo use, put it behind auth and/or
+> a rate limit (e.g. Vercel WAF or an upstream gateway).
 
 ---
 
