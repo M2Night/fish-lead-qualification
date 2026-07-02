@@ -9,13 +9,14 @@ The single interface both halves must agree on. The **worker** now lives in the
 - **Dispatch metadata** (web → worker, JSON string) — the worker owns the persona, so the
   web passes only session options:
   ```json
-  { "language": "en", "voice": "933563129e564b19a115bedd57b7406a" }
+  { "language": "en", "voice": "koi" }
   ```
   - `language` ∈ `en, zh, ja` (UI picker). Default `en`. The worker maps it to a Deepgram
     STT language and a "respond in <language>" instruction.
-  - `voice` (optional) — a **Fish voice_id** (32-char hex). The worker validates it and
-    uses it as the TTS voice; an absent/invalid value falls back to the `FISH_VOICE_ID`
-    env default. The web sends the id for the selected (language, voice).
+  - `voice` (optional) — a short **voice key** (`koi` / `finn` / `marlin`), NOT a raw Fish
+    id. The worker maps `(language, key)` to a real Fish voice_id from its server-side
+    allowlist (`agents/lead_qual/voices.py`); an unknown/absent key falls back to the
+    language's default voice (then `FISH_VOICE_ID`). Real ids never reach the browser.
 
 This is a **conversation-only** discovery agent: there is **no scorecard / qualification
 data channel** and the agent calls no tools.

@@ -238,20 +238,14 @@ const REGIONS={
   zh:{country:'中国',          lang:'Chinese',    flag:'🇨🇳'},
   ja:{country:'日本',          lang:'Japanese',   flag:'🇯🇵'},
 };
-// Shared display set — same 3 names across every language. Fish-themed; edit freely.
+// The 3 selectable voices — display only (names shared across every language). The real
+// Fish voice_ids live server-side in the worker (agents/lead_qual/voices.py); the browser
+// only ever sends the `key` below in dispatch metadata, and the worker maps key → id.
 const VOICE_STYLES=[
-  {name:'Koi',    hue:'#a63bbd'},
-  {name:'Finn',   hue:'#2f9e8f'},
-  {name:'Marlin', hue:'#c07b2f'},
+  {key:'koi',    name:'Koi',    hue:'#a63bbd'},
+  {key:'finn',   name:'Finn',   hue:'#2f9e8f'},
+  {key:'marlin', name:'Marlin', hue:'#c07b2f'},
 ];
-// Real Fish voice_id per (language, slot) — index matches VOICE_STYLES above.
-const VOICE_IDS={
-  en:['933563129e564b19a115bedd57b7406a','ca3007f96ae7499ab87d27ea3599956a','536d3a5e000945adb7038665781a4aca'],
-  zh:['7f92f8afb8ec43bf81429cc1c9199cb1','59cb5986671546eaa6ca8ae6f29f6d22','df3004dbc79447539329bb215fd2cbcc'],
-  ja:['5161d41404314212af1254556477c17d','4da3f8598f874e47a55eb887783575f7','63bc41e652214372b15d9416a30a60b4'],
-};
-function voicesFor(lang){ const ids=VOICE_IDS[lang]||VOICE_IDS.en; return VOICE_STYLES.map((s,i)=>({...s,id:ids[i]})); }
-function voiceId(lang,idx){ return (VOICE_IDS[lang]||VOICE_IDS.en)[idx]; }
 
 let selLang='en', selVoice=0, switching=false, starting=false, pickerLocked=false;
 
@@ -262,7 +256,7 @@ function renderPicker(){
   $('#regionFlag').textContent=cur.flag;
   $('#regionLabel').textContent=`${cur.country} · ${cur.lang}`;
   $('#pickHint').textContent = callActive ? 'Live · tap another agent to switch' : 'Pick an agent voice to start the call';
-  $('#voices').innerHTML=voicesFor(selLang).map((v,i)=>{
+  $('#voices').innerHTML=VOICE_STYLES.map((v,i)=>{
     const on=i===selVoice, go = (callActive&&on) ? '● on call' : (callActive ? 'switch' : 'Call');
     return `<button class="vchip${on?' on':''}" data-vi="${i}" style="--vc:${v.hue};--vcs:${v.hue}22" title="${v.name}">`
       +`<span class="vava">${OP_SVG}</span><span class="vn">${v.name}</span><span class="go">${go}</span></button>`;
@@ -476,7 +470,7 @@ async function startCall(){
   let session;
   try{
     const res=await fetch('/api/session',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({language:selLang, voice:voiceId(selLang,selVoice)})});
+      body:JSON.stringify({language:selLang, voice:VOICE_STYLES[selVoice].key})});
     session=await res.json();
     if(!res.ok)throw new Error(session.error||'Failed to start session.');
   }catch(e){ setState('error','start failed'); showError(e.message||'Could not reach the session endpoint.');

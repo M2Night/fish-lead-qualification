@@ -76,11 +76,12 @@ app.post("/api/session", async (req, res) => {
         : "";
     const language = SUPPORTED_LANGUAGES.has(requested) ? requested : "en";
 
-    // Selected Fish voice_id (per language × voice). Forwarded (trimmed) in dispatch
-    // metadata; the worker validates it as 32-hex and falls back to FISH_VOICE_ID on an
-    // invalid/missing value.
+    // Selected voice KEY (e.g. "koi" / "finn" / "marlin") — NOT a raw Fish id. Forwarded
+    // (trimmed) in dispatch metadata; the worker maps it to a real Fish voice_id from its
+    // server-side allowlist (voices.py) and falls back to a default on an unknown/missing
+    // value. Bounded to keep metadata small.
     const voice =
-      typeof req.body?.voice === "string" ? req.body.voice.trim().slice(0, 64) : "";
+      typeof req.body?.voice === "string" ? req.body.voice.trim().slice(0, 32) : "";
 
     const room = roomName();
     // web → worker session options; omit `voice` when absent to keep metadata clean.

@@ -15,13 +15,13 @@ LiveKit; the page has a language + voice picker and live pipeline lights. It's a
 
 ## `POST /api/session`
 
-Body: `{ "language": "en", "voice": "<32-hex Fish voice_id>" }` (language one of
-`en zh ja`; defaults to `en` if absent/invalid. `voice` is optional — the worker
-validates it as 32-hex and falls back to `FISH_VOICE_ID`).
+Body: `{ "language": "en", "voice": "koi" }` (language one of `en zh ja`; defaults to
+`en` if absent/invalid. `voice` is an optional short key — `koi` / `finn` / `marlin` —
+which the worker maps to a real Fish voice_id server-side; unknown/absent → default).
 
 It mints a participant token (`roomJoin` + `canPublish` + `canSubscribe`) and
 dispatches the agent `agent_name="lead-qual"` with
-`metadata = {"language": "<lang>", "voice": "<fish voice_id>"}` (per `../CONTRACT.md`). Returns:
+`metadata = {"language": "<lang>", "voice": "<voice key>"}` (per `../CONTRACT.md`). Returns:
 
 ```json
 { "livekitUrl": "...", "roomName": "lead-qual-xxxxxxxx", "token": "..." }
@@ -61,5 +61,5 @@ The page loads and animates without keys, but **Start call** needs valid
 
 The selected language + voice are POSTed to `/api/session` as `{ language, voice }`,
 JSON-stringified into the dispatch metadata; the worker maps `language` to the STT
-language + instruction language, and uses `voice` as the Fish TTS voice (fallback
-`FISH_VOICE_ID`).
+language + instruction language, and maps the `voice` key to a Fish voice_id via its
+server-side allowlist (fallback `FISH_VOICE_ID`).
