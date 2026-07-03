@@ -44,6 +44,8 @@ const FISH_BARS = [
   { x: 456.7, y: 204.1, h: 38 },
 ];
 
+const PREWARM_THROTTLE_MS = 12_000;
+
 // Operator / headset glyph — "a support voice you can call".
 function OperatorGlyph() {
   return (
@@ -232,18 +234,28 @@ export function LeadQualView({
     }
   }
 
-  // Re-warm the connection the moment the user hovers the picker — just before they
-  // click. The SDK already prepareConnection()s once on mount (DNS/TLS/edge lookup), but
-  // that TLS goes idle if the user lingers; a hover re-warm keeps it hot at click time so
-  // room.connect() reuses a live path. Throttled so repeated hovers don't spam /api/token.
-  function warmConnection() {
+  // Pre-warm the LiveKit connection before Start Call so click-time start() has less
+  // token/signal setup to do. Throttled because prepareConnection() can hit /api/token.
+  const warmConnection = useCallback(
+    (label = 'prewarm connection') => {
+      if (callInProgress) return;
+      const now = performance.now();
+      if (now - lastWarmRef.current < PREWARM_THROTTLE_MS) return;
+      lastWarmRef.current = now;
+      markPerf(label);
+      void prepareConnection().catch(() => {});
+    },
+    [callInProgress, prepareConnection, markPerf]
+  );
+
+  // Warm shortly after the picker renders, and again after a language/voice change. The
+  // timeout lets useSession finish applying the latest agentMetadata before we fetch.
+  useEffect(() => {
     if (callInProgress) return;
-    const now = performance.now();
-    if (now - lastWarmRef.current < 12_000) return;
-    lastWarmRef.current = now;
-    markPerf('prewarm connection');
-    void prepareConnection().catch(() => {});
-  }
+    lastWarmRef.current = Number.NEGATIVE_INFINITY;
+    const t = window.setTimeout(() => warmConnection('prewarm ready'), 600);
+    return () => window.clearTimeout(t);
+  }, [language, voice, callInProgress, warmConnection]);
 
   function selectVoice(id: string) {
     if (callInProgress) return;
@@ -437,7 +449,7 @@ export function LeadQualView({
         <div className="col voice-col">
           <div className="voice-body" style={{ ['--halo' as string]: String(halo) }}>
             {!showSession ? (
-              <div className="welcome-panel" onPointerEnter={warmConnection}>
+              <div className="welcome-panel" onPointerEnter={() => warmConnection('prewarm hover')}>
                 <div className="region">
                   <button
                     className="region-btn"
@@ -497,7 +509,13 @@ export function LeadQualView({
                   })}
                 </div>
 
-                <button className="start-call" onClick={startCall} disabled={starting}>
+                <button
+                  className="start-call"
+                  onFocus={() => warmConnection('prewarm focus')}
+                  onPointerDown={() => warmConnection('prewarm pointerdown')}
+                  onClick={startCall}
+                  disabled={starting}
+                >
                   {starting ? 'Connecting...' : 'Start call'}
                 </button>
               </div>
