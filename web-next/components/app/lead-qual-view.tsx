@@ -260,11 +260,11 @@ export function LeadQualView({
     // it stops + gives a soft "connected" chime once the agent audio arrives. The sound
     // is cosmetic — never let an audio failure block the call from starting.
     try {
-      if (!soundsRef.current) soundsRef.current = createCallSounds();
+      if (!soundsRef.current) soundsRef.current = createCallSounds(markPerf);
       soundsRef.current.arm();
       soundsRef.current.startRing();
-    } catch {
-      markPerf('ring unavailable');
+    } catch (e) {
+      markPerf(`ring unavailable: ${e instanceof Error ? e.name : 'err'}`);
     }
     // Unlock audio playback NOW, inside the synchronous click gesture — before the async
     // connect. The worker speaks its opener the instant the room connects; if playback

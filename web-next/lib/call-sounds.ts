@@ -21,7 +21,7 @@ export type CallSounds = {
   dispose: () => void;
 };
 
-export function createCallSounds(): CallSounds {
+export function createCallSounds(log: (msg: string) => void = () => {}): CallSounds {
   let ctx: AudioContext | null = null;
   let ringTimer: ReturnType<typeof setInterval> | null = null;
   let ringStopTimer: ReturnType<typeof setTimeout> | null = null;
@@ -41,12 +41,35 @@ export function createCallSounds(): CallSounds {
     return ctx;
   }
 
+  function disconnectOnEnded(o: OscillatorNode, g: GainNode) {
+    o.onended = () => {
+      o.disconnect();
+      g.disconnect();
+    };
+  }
+
+  // Some mobile/WebKit autoplay paths only fully unlock Web Audio when a source is
+  // started inside the user gesture, not only after resume() resolves.
+  function primeOutput(c: AudioContext) {
+    const t = c.currentTime;
+    const g = c.createGain();
+    g.connect(c.destination);
+    g.gain.setValueAtTime(0.0001, t);
+    const o = c.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = 440;
+    o.connect(g);
+    disconnectOnEnded(o, g);
+    o.start(t);
+    o.stop(t + 0.02);
+  }
+
   // One warm ring pulse. Gentle envelope, audible but not piercing. Scheduled a hair
   // in the future so a just-resumed context still plays it (t=currentTime can be stale
   // for the very first pulse right after resume()).
-  function ringPulse() {
-    const c = ac();
+  function ringPulse(c = ac()) {
     if (c.state !== 'running') void c.resume();
+    log(`ring:pulse state=${c.state} t=${c.currentTime.toFixed(2)}`);
     const t = c.currentTime + 0.03;
     const g = c.createGain();
     g.connect(c.destination);
@@ -58,37 +81,41 @@ export function createCallSounds(): CallSounds {
     o.type = 'sine';
     o.frequency.value = 440; // warm mid tone, not a harsh telephone beat
     o.connect(g);
-    o.onended = () => {
-      o.disconnect();
-      g.disconnect();
-    };
+    disconnectOnEnded(o, g);
     o.start(t);
     o.stop(t + 0.53);
+    return t + 0.53;
   }
 
   function arm() {
     const c = ac();
+    primeOutput(c);
     if (c.state === 'suspended') void c.resume();
+    log(`ring:arm state=${c.state}`);
   }
 
   function startRing() {
     stopRing(); // invalidates any prior ring token + clears timers
     const c = ac();
     const token = ringToken;
+    log(`ring:start state=${c.state}`);
     // Guarded so a resume that resolves after stop/dispose can't fire a stale pulse or
     // resurrect a closed context (ctx would differ or the token would have moved on).
     const guardedPulse = () => {
-      if (token !== ringToken || ctx !== c) return;
-      ringPulse();
+      if (token !== ringToken || ctx !== c) return null;
+      return ringPulse(c);
     };
-    // Play the first pulse only once the context is actually running; otherwise the
-    // synchronous pulse is scheduled against a frozen (suspended) clock and is silent.
+    // Schedule the first audible pulse in the click gesture. The +0.03s lead in ringPulse
+    // keeps it safe for a context that is just being resumed, while staying inside the
+    // browser's user-activation window.
+    const firstPulseEnd = guardedPulse();
     if (c.state === 'suspended') {
       c.resume()
-        .then(guardedPulse)
-        .catch(() => {});
-    } else {
-      guardedPulse();
+        .then(() => {
+          log(`ring:resumed state=${c.state}`);
+          if (firstPulseEnd !== null && c.currentTime > firstPulseEnd) guardedPulse();
+        })
+        .catch((e) => log(`ring:resume-fail ${e instanceof Error ? e.name : 'err'}`));
     }
     ringTimer = setInterval(guardedPulse, 1600); // slow, unhurried cadence
     ringStopTimer = setTimeout(stopRing, 20_000); // hard cap so it never rings forever
@@ -126,10 +153,7 @@ export function createCallSounds(): CallSounds {
       o.type = 'sine';
       o.frequency.value = f;
       o.connect(g);
-      o.onended = () => {
-        o.disconnect();
-        g.disconnect();
-      };
+      disconnectOnEnded(o, g);
       o.start(t + dt);
       o.stop(t + dt + 0.4);
     });
