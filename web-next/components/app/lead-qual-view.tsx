@@ -10,6 +10,7 @@ import {
 } from '@livekit/components-react';
 import { LANGUAGES, VOICES } from '@/app-config';
 import { useWaveform } from '@/hooks/useWaveform';
+import { type CallSounds, createCallSounds } from '@/lib/call-sounds';
 
 // Per-voice accent hue (display only) — ported from the original demo.
 const VOICE_HUE: Record<string, string> = {
@@ -114,6 +115,17 @@ export function LeadQualView({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const perfEnabledRef = useRef(false);
   const perfT0Ref = useRef<number | null>(null);
+  const firstAgentSpeechSeenRef = useRef(false);
+  const micEnabledAfterOpenerRef = useRef(false);
+  const micEnableInFlightRef = useRef(false);
+  const soundsRef = useRef<CallSounds | null>(null);
+  const connectedCueRef = useRef(false);
+  // Bumped on every call boundary (start/end/disconnect); an in-flight async mic-enable
+  // from a previous call only mutates state if its captured seq still matches.
+  const callSeqRef = useRef(0);
+  // Latest agent state, readable from timeouts (whose closures would otherwise be stale).
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // Real MediaStreamTracks for the waveform: agent (from the assistant) + local mic.
   const agentMst = audioTrack?.publication?.track?.mediaStreamTrack;
@@ -163,13 +175,59 @@ export function LeadQualView({
     console.log('⏱ click', '0ms');
   }
 
+  // Reset the per-call cue state (mic gate + connect chime). Safe to call repeatedly
+  // while connecting — it does NOT touch the ringback (a dedicated effect owns that).
+  function resetMicGate() {
+    callSeqRef.current += 1; // invalidate any in-flight mic-enable from a prior call
+    firstAgentSpeechSeenRef.current = false;
+    micEnabledAfterOpenerRef.current = false;
+    micEnableInFlightRef.current = false;
+    connectedCueRef.current = false;
+  }
+
+  // Publish the caller mic. Guarded by a captured call-seq so a slow enable from a
+  // previous call can't pollute a newer one, and by the in-flight/enabled flags so it
+  // never double-publishes. Errors are surfaced (a silent failure would leave the UI
+  // "live" while the agent hears nothing).
+  const enableMic = useCallback(
+    (label: string) => {
+      if (micEnabledAfterOpenerRef.current || micEnableInFlightRef.current) return;
+      micEnableInFlightRef.current = true;
+      const seq = callSeqRef.current;
+      markPerf(label);
+      void room.localParticipant
+        .setMicrophoneEnabled(
+          true,
+          { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          { preConnectBuffer: false }
+        )
+        .then(() => {
+          if (seq !== callSeqRef.current) return; // a newer call started — ignore
+          micEnabledAfterOpenerRef.current = true;
+          markPerf('mic enabled');
+        })
+        .catch((e) => {
+          if (seq !== callSeqRef.current) return;
+          setErr(e instanceof Error ? e.message : 'Could not enable microphone.');
+          markPerf('mic enable failed');
+        })
+        .finally(() => {
+          if (seq === callSeqRef.current) micEnableInFlightRef.current = false;
+        });
+    },
+    [room.localParticipant, markPerf]
+  );
+
   async function beginCall() {
     if (isConnected) return;
     setErr(null);
     setStarting(true);
     try {
       markPerf('session.start begin');
-      await start();
+      // Let the agent always speak first. We connect and subscribe to the agent audio
+      // immediately, but do not publish the caller mic until after the first opener has
+      // played; otherwise background speech can reach STT before the greeting.
+      await start({ tracks: { microphone: { enabled: false } } });
       markPerf('session.start resolved');
     } catch (e) {
       markPerf('session.start failed');
@@ -197,6 +255,17 @@ export function LeadQualView({
   function clickVoice(id: string) {
     if (callActive) return;
     startPerf();
+    resetMicGate();
+    // Gentle ringback while connecting (armed here so autoplay honors the gesture);
+    // it stops + gives a soft "connected" chime once the agent audio arrives. The sound
+    // is cosmetic — never let an audio failure block the call from starting.
+    try {
+      if (!soundsRef.current) soundsRef.current = createCallSounds();
+      soundsRef.current.arm();
+      soundsRef.current.startRing();
+    } catch {
+      markPerf('ring unavailable');
+    }
     // Unlock audio playback NOW, inside the synchronous click gesture — before the async
     // connect. The worker speaks its opener the instant the room connects; if playback
     // isn't already unlocked, the browser engages it a beat late (RoomAudioRenderer only
@@ -232,6 +301,7 @@ export function LeadQualView({
   async function endCall() {
     try {
       markPerf('end clicked');
+      resetMicGate();
       await end();
     } catch {
       /* ignore */
@@ -311,8 +381,69 @@ export function LeadQualView({
   }, [isConnected, markPerf]);
 
   useEffect(() => {
-    if (audioTrack) markPerf('agent audioTrack hook ready');
+    if (!audioTrack) return;
+    markPerf('agent audioTrack hook ready');
+    // Agent audio has arrived → the call is "connected": stop the ringback and play a
+    // soft chime (once), just before the gated opener starts.
+    if (!connectedCueRef.current) {
+      connectedCueRef.current = true;
+      soundsRef.current?.stopRing();
+      soundsRef.current?.playConnected();
+    }
   }, [audioTrack, markPerf]);
+
+  // Safety net a few seconds in. "Agent speaks first" is a hard rule, so we only
+  // recover the mic if the opener DID play (firstAgentSpeechSeen) but the
+  // speaking→listening transition was somehow missed. If the agent never greeted, we
+  // do NOT open the mic (that would let background speech reach STT before any
+  // greeting) — we surface an error and let the user retry instead.
+  useEffect(() => {
+    if (!isConnected) return;
+    const t = setTimeout(() => {
+      if (micEnabledAfterOpenerRef.current || micEnableInFlightRef.current) return;
+      if (!firstAgentSpeechSeenRef.current) {
+        // Agent never greeted — keep the mic off (agent must speak first), surface it.
+        markPerf('opener missing (mic kept off)');
+        setErr('The agent did not greet. Please end the call and try again.');
+      } else if (stateRef.current !== 'speaking') {
+        // Opener played and it's not mid-utterance — safe to recover the mic.
+        enableMic('mic enable fallback');
+      }
+      // else: opener still playing (rare, >8s) — defer to the normal speaking→listening path.
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [isConnected, enableMic, markPerf]);
+
+  // Ringback lifecycle: it starts in clickVoice and is stopped either by the connect
+  // chime (agent audio arrived) or here, once we're neither connecting nor connected
+  // (idle / errored / ended). Keeps the ring from surviving a failed or finished call.
+  useEffect(() => {
+    if (!starting && !isConnected) soundsRef.current?.stopRing();
+  }, [starting, isConnected]);
+
+  // Release the call-sounds AudioContext on unmount.
+  useEffect(() => () => soundsRef.current?.dispose(), []);
+
+  useEffect(() => {
+    if (!isConnected) {
+      resetMicGate();
+      return;
+    }
+    if (state === 'speaking') {
+      firstAgentSpeechSeenRef.current = true;
+      return;
+    }
+    if (
+      state !== 'listening' ||
+      !firstAgentSpeechSeenRef.current ||
+      micEnabledAfterOpenerRef.current ||
+      micEnableInFlightRef.current
+    ) {
+      return;
+    }
+
+    enableMic('mic enable after opener');
+  }, [isConnected, state, enableMic]);
 
   const cur = REGION[language] ?? REGION.en;
   const copy = VSTATE_COPY[vs];
