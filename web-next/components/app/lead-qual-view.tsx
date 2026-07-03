@@ -9,8 +9,8 @@ import {
   useVoiceAssistant,
 } from '@livekit/components-react';
 import { LANGUAGES, VOICES } from '@/app-config';
-import { type CallSounds, createCallSounds } from '@/lib/call-sounds';
 import { useWaveform } from '@/hooks/useWaveform';
+import { type CallSounds, createCallSounds } from '@/lib/call-sounds';
 
 // Per-voice accent hue (display only) — ported from the original demo.
 const VOICE_HUE: Record<string, string> = {
