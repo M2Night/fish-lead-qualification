@@ -1,9 +1,10 @@
 'use client';
 
 /**
- * Synthesized call sounds (no audio assets) — a gentle ringback while the call
- * connects and a soft two-note chime when the agent joins. Deliberately warm and
- * low-volume (sine tones, slow cadence) so it never feels harsh or urgent.
+ * Synthesized call sounds (no audio assets) — a gentle dual-tone ringback while
+ * the call connects and a soft two-note chime when the agent joins. Deliberately
+ * warm and moderate-volume (sine tones, steady cadence) so it never feels harsh
+ * or urgent.
  *
  * Must be armed from a user gesture (the Call click) so the browser lets the
  * AudioContext play.
@@ -25,6 +26,7 @@ export function createCallSounds(log: (msg: string) => void = () => {}): CallSou
   let ctx: AudioContext | null = null;
   let ringTimer: ReturnType<typeof setInterval> | null = null;
   let ringStopTimer: ReturnType<typeof setTimeout> | null = null;
+  const liveRingOscillators = new Set<OscillatorNode>();
   // Bumped by stopRing()/dispose(); an in-flight async resume callback only plays if its
   // captured token still matches (so a stopped/disposed ring can't fire a stale pulse or
   // resurrect a closed AudioContext).
@@ -41,11 +43,23 @@ export function createCallSounds(log: (msg: string) => void = () => {}): CallSou
     return ctx;
   }
 
-  function disconnectOnEnded(o: OscillatorNode, g: GainNode) {
+  function disconnectOnEnded(o: OscillatorNode, g: GainNode, trackRing = false) {
+    if (trackRing) liveRingOscillators.add(o);
     o.onended = () => {
+      if (trackRing) liveRingOscillators.delete(o);
       o.disconnect();
       g.disconnect();
     };
+  }
+
+  function stopLiveRingOscillators() {
+    for (const o of liveRingOscillators) {
+      try {
+        o.stop();
+      } catch {
+        // Already stopped or not yet started.
+      }
+    }
   }
 
   // Some mobile/WebKit autoplay paths only fully unlock Web Audio when a source is
@@ -64,27 +78,30 @@ export function createCallSounds(log: (msg: string) => void = () => {}): CallSou
     o.stop(t + 0.02);
   }
 
-  // One warm ring pulse. Gentle envelope, audible but not piercing. Scheduled a hair
+  // One warm dual-tone ring pulse. Gentle envelope, audible but not piercing. Scheduled a hair
   // in the future so a just-resumed context still plays it (t=currentTime can be stale
   // for the very first pulse right after resume()).
   function ringPulse(c = ac()) {
     if (c.state !== 'running') void c.resume();
     log(`ring:pulse state=${c.state} t=${c.currentTime.toFixed(2)}`);
     const t = c.currentTime + 0.03;
-    const g = c.createGain();
-    g.connect(c.destination);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.08, t + 0.05);
-    g.gain.setValueAtTime(0.08, t + 0.22);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
-    const o = c.createOscillator();
-    o.type = 'sine';
-    o.frequency.value = 440; // warm mid tone, not a harsh telephone beat
-    o.connect(g);
-    disconnectOnEnded(o, g);
-    o.start(t);
-    o.stop(t + 0.53);
-    return t + 0.53;
+    const duration = 0.62;
+    [440, 480].forEach((frequency) => {
+      const g = c.createGain();
+      g.connect(c.destination);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.07, t + 0.05);
+      g.gain.setValueAtTime(0.07, t + 0.3);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + duration - 0.03);
+      const o = c.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = frequency;
+      o.connect(g);
+      disconnectOnEnded(o, g, true);
+      o.start(t);
+      o.stop(t + duration);
+    });
+    return t + duration;
   }
 
   function arm() {
@@ -117,12 +134,13 @@ export function createCallSounds(log: (msg: string) => void = () => {}): CallSou
         })
         .catch((e) => log(`ring:resume-fail ${e instanceof Error ? e.name : 'err'}`));
     }
-    ringTimer = setInterval(guardedPulse, 1600); // slow, unhurried cadence
+    ringTimer = setInterval(guardedPulse, 1100); // quick enough to signal progress
     ringStopTimer = setTimeout(stopRing, 20_000); // hard cap so it never rings forever
   }
 
   function stopRing() {
     ringToken += 1; // invalidate any pending resume callback / interval tick
+    stopLiveRingOscillators();
     if (ringTimer) {
       clearInterval(ringTimer);
       ringTimer = null;

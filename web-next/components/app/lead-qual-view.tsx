@@ -9,6 +9,7 @@ import {
   useVoiceAssistant,
 } from '@livekit/components-react';
 import { LANGUAGES, VOICES } from '@/app-config';
+import { type CallSounds, createCallSounds } from '@/lib/call-sounds';
 import { useWaveform } from '@/hooks/useWaveform';
 
 // Per-voice accent hue (display only) — ported from the original demo.
@@ -118,6 +119,8 @@ export function LeadQualView({
   const firstAgentSpeechSeenRef = useRef(false);
   const micEnabledAfterOpenerRef = useRef(false);
   const micEnableInFlightRef = useRef(false);
+  const soundsRef = useRef<CallSounds | null>(null);
+  const chimePlayedRef = useRef(false);
   // Bumped on every call boundary (start/end/disconnect); an in-flight async mic-enable
   // from a previous call only mutates state if its captured seq still matches.
   const callSeqRef = useRef(0);
@@ -180,6 +183,7 @@ export function LeadQualView({
     firstAgentSpeechSeenRef.current = false;
     micEnabledAfterOpenerRef.current = false;
     micEnableInFlightRef.current = false;
+    chimePlayedRef.current = false;
   }
 
   // Publish the caller mic. Guarded by a captured call-seq so a slow enable from a
@@ -266,6 +270,13 @@ export function LeadQualView({
     if (callInProgress) return;
     startPerf();
     resetMicGate();
+    try {
+      soundsRef.current ??= createCallSounds(markPerf);
+      soundsRef.current.arm();
+      soundsRef.current.startRing();
+    } catch (e) {
+      markPerf(`ring unavailable: ${e instanceof Error ? e.name : 'error'}`);
+    }
     // Unlock audio playback NOW, inside the synchronous click gesture — before the async
     // connect. The worker speaks its opener the instant the room connects; if playback
     // isn't already unlocked, the browser engages it a beat late (RoomAudioRenderer only
@@ -312,6 +323,7 @@ export function LeadQualView({
   // session settles to disconnected, and the user can retry with the End button.
   useEffect(() => {
     if (state !== 'failed') return;
+    soundsRef.current?.stopRing();
     setErr('The agent failed to connect. Please try again.');
   }, [state]);
 
@@ -364,13 +376,29 @@ export function LeadQualView({
   }, [room, markPerf]);
 
   useEffect(() => {
-    if (isConnected) markPerf('session connected state');
+    if (!isConnected) return;
+    markPerf('session connected state');
+    soundsRef.current?.stopRing();
+    if (!chimePlayedRef.current) {
+      chimePlayedRef.current = true;
+      soundsRef.current?.playConnected();
+    }
   }, [isConnected, markPerf]);
 
   useEffect(() => {
     if (!audioTrack) return;
     markPerf('agent audioTrack hook ready');
+    soundsRef.current?.stopRing();
   }, [audioTrack, markPerf]);
+
+  useEffect(() => {
+    if (starting || isConnected) return;
+    soundsRef.current?.stopRing();
+  }, [starting, isConnected]);
+
+  useEffect(() => {
+    return () => soundsRef.current?.dispose();
+  }, []);
 
   // Safety net a few seconds in. "Agent speaks first" is a hard rule, so we only
   // recover the mic if the opener DID play (firstAgentSpeechSeen) but the
