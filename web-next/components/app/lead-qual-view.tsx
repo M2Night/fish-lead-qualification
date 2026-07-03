@@ -10,7 +10,6 @@ import {
 } from '@livekit/components-react';
 import { LANGUAGES, VOICES } from '@/app-config';
 import { useWaveform } from '@/hooks/useWaveform';
-import { type CallSounds, createCallSounds } from '@/lib/call-sounds';
 
 // Per-voice accent hue (display only) — ported from the original demo.
 const VOICE_HUE: Record<string, string> = {
@@ -107,7 +106,6 @@ export function LeadQualView({
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [wantStart, setWantStart] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [perfEnabled, setPerfEnabled] = useState(false);
   const [perfLines, setPerfLines] = useState<string[]>([]);
@@ -118,8 +116,6 @@ export function LeadQualView({
   const firstAgentSpeechSeenRef = useRef(false);
   const micEnabledAfterOpenerRef = useRef(false);
   const micEnableInFlightRef = useRef(false);
-  const soundsRef = useRef<CallSounds | null>(null);
-  const connectedCueRef = useRef(false);
   // Bumped on every call boundary (start/end/disconnect); an in-flight async mic-enable
   // from a previous call only mutates state if its captured seq still matches.
   const callSeqRef = useRef(0);
@@ -152,7 +148,8 @@ export function LeadQualView({
     liveLabel = agentReady ? 'live' : 'waking agent…';
   }
 
-  const callActive = isConnected || starting;
+  const callInProgress = isConnected || starting;
+  const showSession = isConnected;
 
   useEffect(() => {
     const enabled = new URLSearchParams(window.location.search).has('perf');
@@ -175,14 +172,12 @@ export function LeadQualView({
     console.log('⏱ click', '0ms');
   }
 
-  // Reset the per-call cue state (mic gate + connect chime). Safe to call repeatedly
-  // while connecting — it does NOT touch the ringback (a dedicated effect owns that).
+  // Reset the per-call mic gate state. Safe to call repeatedly while connecting.
   function resetMicGate() {
     callSeqRef.current += 1; // invalidate any in-flight mic-enable from a prior call
     firstAgentSpeechSeenRef.current = false;
     micEnabledAfterOpenerRef.current = false;
     micEnableInFlightRef.current = false;
-    connectedCueRef.current = false;
   }
 
   // Publish the caller mic. Guarded by a captured call-seq so a slow enable from a
@@ -242,7 +237,7 @@ export function LeadQualView({
   // that TLS goes idle if the user lingers; a hover re-warm keeps it hot at click time so
   // room.connect() reuses a live path. Throttled so repeated hovers don't spam /api/token.
   function warmConnection() {
-    if (callActive) return;
+    if (callInProgress) return;
     const now = performance.now();
     if (now - lastWarmRef.current < 12_000) return;
     lastWarmRef.current = now;
@@ -250,22 +245,15 @@ export function LeadQualView({
     void prepareConnection().catch(() => {});
   }
 
-  // Click a voice = SELECT it, then start on the next render (so the fresh
-  // language/voice is already baked into the token source / agentMetadata).
-  function clickVoice(id: string) {
-    if (callActive) return;
+  function selectVoice(id: string) {
+    if (callInProgress) return;
+    onVoiceChange(id);
+  }
+
+  function startCall() {
+    if (callInProgress) return;
     startPerf();
     resetMicGate();
-    // Gentle ringback while connecting (armed here so autoplay honors the gesture);
-    // it stops + gives a soft "connected" chime once the agent audio arrives. The sound
-    // is cosmetic — never let an audio failure block the call from starting.
-    try {
-      if (!soundsRef.current) soundsRef.current = createCallSounds(markPerf);
-      soundsRef.current.arm();
-      soundsRef.current.startRing();
-    } catch (e) {
-      markPerf(`ring unavailable: ${e instanceof Error ? e.name : 'err'}`);
-    }
     // Unlock audio playback NOW, inside the synchronous click gesture — before the async
     // connect. The worker speaks its opener the instant the room connects; if playback
     // isn't already unlocked, the browser engages it a beat late (RoomAudioRenderer only
@@ -276,25 +264,12 @@ export function LeadQualView({
       .startAudio()
       .then(() => markPerf(`startAudio ok (${room.canPlaybackAudio ? 'playback on' : 'pending'})`))
       .catch((e) => markPerf(`startAudio blocked: ${e instanceof Error ? e.name : 'error'}`));
-    onVoiceChange(id);
-    setWantStart(true);
+    void beginCall();
   }
-  useEffect(() => {
-    if (!wantStart) return;
-    setWantStart(false);
-    // useSession stores the {language, voice} fetch options in a ref it updates in
-    // a PASSIVE effect on the parent fiber — which runs AFTER this descendant effect
-    // in the same commit. Calling start() synchronously here would mint the token
-    // with the PREVIOUS selection's agentMetadata (the race bites the first time you
-    // pick a non-default voice). Deferring to a microtask drains after the whole
-    // passive-effect pass, so the parent's ref already holds the fresh selection.
-    queueMicrotask(() => void beginCall());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wantStart, voice, language]);
 
   function selectRegion(id: string) {
     setMenuOpen(false);
-    if (callActive || id === language) return;
+    if (callInProgress || id === language) return;
     onLanguageChange(id);
   }
 
@@ -383,13 +358,6 @@ export function LeadQualView({
   useEffect(() => {
     if (!audioTrack) return;
     markPerf('agent audioTrack hook ready');
-    // Agent audio has arrived → the call is "connected": stop the ringback and play a
-    // soft chime (once), just before the gated opener starts.
-    if (!connectedCueRef.current) {
-      connectedCueRef.current = true;
-      soundsRef.current?.stopRing();
-      soundsRef.current?.playConnected();
-    }
   }, [audioTrack, markPerf]);
 
   // Safety net a few seconds in. "Agent speaks first" is a hard rule, so we only
@@ -413,16 +381,6 @@ export function LeadQualView({
     }, 8000);
     return () => clearTimeout(t);
   }, [isConnected, enableMic, markPerf]);
-
-  // Ringback lifecycle: it starts in clickVoice and is stopped either by the connect
-  // chime (agent audio arrived) or here, once we're neither connecting nor connected
-  // (idle / errored / ended). Keeps the ring from surviving a failed or finished call.
-  useEffect(() => {
-    if (!starting && !isConnected) soundsRef.current?.stopRing();
-  }, [starting, isConnected]);
-
-  // Release the call-sounds AudioContext on unmount.
-  useEffect(() => () => soundsRef.current?.dispose(), []);
 
   useEffect(() => {
     if (!isConnected) {
@@ -475,128 +433,124 @@ export function LeadQualView({
         </div>
       </header>
 
-      {/* ===== main ===== */}
       <main>
         <div className="col voice-col">
           <div className="voice-body" style={{ ['--halo' as string]: String(halo) }}>
-            {/* region × voice picker */}
-            <div
-              className={callActive ? 'picker locked' : 'picker'}
-              onPointerEnter={warmConnection}
-            >
-              <div className="region">
-                <button
-                  className="region-btn"
-                  disabled={callActive}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMenuOpen((o) => !o);
-                  }}
-                >
-                  <span className="flag">{cur.flag}</span>
-                  <span>
-                    {cur.country} · {cur.lang}
-                  </span>
-                  <span className="car">▾</span>
+            {!showSession ? (
+              <div className="welcome-panel" onPointerEnter={warmConnection}>
+                <div className="region">
+                  <button
+                    className="region-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen((o) => !o);
+                    }}
+                  >
+                    <span className="flag">{cur.flag}</span>
+                    <span>
+                      {cur.country} · {cur.lang}
+                    </span>
+                    <span className="car">▾</span>
+                  </button>
+                  {menuOpen && (
+                    <div className="region-menu open">
+                      {LANGUAGES.map((l) => {
+                        const r = REGION[l.id] ?? { flag: '', country: l.name, lang: l.name };
+                        return (
+                          <button
+                            key={l.id}
+                            className={l.id === language ? 'on' : ''}
+                            onClick={() => selectRegion(l.id)}
+                          >
+                            <span className="rflag">{r.flag}</span>
+                            <span>{r.country}</span>
+                            <span className="sub">{r.lang}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pick-hint">Choose a language and voice</div>
+
+                <div className="voices">
+                  {VOICES.map((v) => {
+                    const on = v.id === voice;
+                    const hue = VOICE_HUE[v.id] ?? 'var(--accent)';
+                    return (
+                      <button
+                        key={v.id}
+                        className={on ? 'vchip on' : 'vchip'}
+                        disabled={starting}
+                        style={{ ['--vc' as string]: hue, ['--vcs' as string]: `${hue}22` }}
+                        title={v.name}
+                        onClick={() => selectVoice(v.id)}
+                      >
+                        <span className="vava">
+                          <OperatorGlyph />
+                        </span>
+                        <span className="vn">{v.name}</span>
+                        <span className="go">{on ? 'Selected' : ''}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button className="start-call" onClick={startCall} disabled={starting}>
+                  {starting ? 'Connecting...' : 'Start call'}
                 </button>
-                {menuOpen && (
-                  <div className="region-menu open">
-                    {LANGUAGES.map((l) => {
-                      const r = REGION[l.id] ?? { flag: '', country: l.name, lang: l.name };
-                      return (
-                        <button
-                          key={l.id}
-                          className={l.id === language ? 'on' : ''}
-                          onClick={() => selectRegion(l.id)}
-                        >
-                          <span className="rflag">{r.flag}</span>
-                          <span>{r.country}</span>
-                          <span className="sub">{r.lang}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
-
-              <div className="pick-hint">
-                {callActive
-                  ? 'On call — end the call to switch language or voice'
-                  : 'Pick an agent voice to start the call'}
+            ) : (
+              <div className="session-pipe">
+                <div className="pipe">
+                  <span className={vs === 'listening' ? 'node on' : 'node'}>
+                    <i />
+                    Mic
+                  </span>
+                  <span className="arrow">→</span>
+                  <span className={vs === 'listening' ? 'node on' : 'node'}>
+                    <i />
+                    STT
+                  </span>
+                  <span className="arrow">→</span>
+                  <span className={vs === 'thinking' ? 'node on' : 'node'}>
+                    <i />
+                    Reasoning
+                  </span>
+                  <span className="arrow">→</span>
+                  <span className={vs === 'speaking' ? 'node on' : 'node'}>
+                    <i />
+                    Fish TTS
+                  </span>
+                </div>
               </div>
-
-              <div className="voices">
-                {VOICES.map((v) => {
-                  const on = v.id === voice;
-                  const hue = VOICE_HUE[v.id] ?? 'var(--accent)';
-                  return (
-                    <button
-                      key={v.id}
-                      className={on ? 'vchip on' : 'vchip'}
-                      disabled={callActive}
-                      style={{ ['--vc' as string]: hue, ['--vcs' as string]: `${hue}22` }}
-                      title={v.name}
-                      onClick={() => clickVoice(v.id)}
-                    >
-                      <span className="vava">
-                        <OperatorGlyph />
-                      </span>
-                      <span className="vn">{v.name}</span>
-                      <span className="go">{callActive ? (on ? '● on call' : '') : 'Call'}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* End call — outside .picker so locking the picker can't disable it */}
-            {isConnected && (
-              <button className="hangup" onClick={endCall}>
-                ■ End call
-              </button>
             )}
 
-            <canvas id="wave" ref={canvasRef} />
+            <canvas id="wave" ref={canvasRef} className={showSession ? '' : 'wave-hidden'} />
 
-            <div className={`vstate ${vs === 'idle' ? '' : vs}`}>
-              <div className="lbl">{copy.label}</div>
-              <div className="hint">{copy.hint}</div>
-            </div>
+            {showSession && (
+              <>
+                <div className={`vstate ${vs === 'idle' ? '' : vs}`}>
+                  <div className="lbl">{copy.label}</div>
+                  <div className="hint">{copy.hint}</div>
+                </div>
 
-            {/* Audio-playback gate: mergedProps carries onClick + a display:none
-                style that self-hides it once playback is unblocked. Our className
-                comes last so the paper styling wins over the SDK's default. */}
-            <button {...audioGateProps} className="btn end audiogate">
-              Enable audio output
-            </button>
+                {/* Audio-playback gate: mergedProps carries onClick + a display:none
+                    style that self-hides it once playback is unblocked. Our className
+                    comes last so the paper styling wins over the SDK's default. */}
+                <button {...audioGateProps} className="btn end audiogate">
+                  Enable audio output
+                </button>
+
+                <button className="hangup" onClick={endCall}>
+                  End call
+                </button>
+              </>
+            )}
           </div>
         </div>
       </main>
-
-      {/* ===== telemetry footer ===== */}
-      <footer>
-        <div className="pipe">
-          <span className={vs === 'listening' ? 'node on' : 'node'}>
-            <i />
-            Mic
-          </span>
-          <span className="arrow">→</span>
-          <span className={vs === 'listening' ? 'node on' : 'node'}>
-            <i />
-            STT
-          </span>
-          <span className="arrow">→</span>
-          <span className={vs === 'thinking' ? 'node on' : 'node'}>
-            <i />
-            Reasoning
-          </span>
-          <span className="arrow">→</span>
-          <span className={vs === 'speaking' ? 'node on' : 'node'}>
-            <i />
-            Fish TTS
-          </span>
-        </div>
-      </footer>
 
       {err && <div className="errbar">{err}</div>}
       {perfEnabled && <pre className="perf-log">{perfLines.join('\n')}</pre>}

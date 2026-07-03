@@ -64,7 +64,7 @@ the voice **key** to a real Fish `voice_id` from its own allowlist (`voices.py`)
 
 ## Customizing
 
-- Landing copy lives in [`components/app/welcome-view.tsx`](./components/app/welcome-view.tsx); the language + voice picker is in the same view.
+- The welcome picker and live call view live in [`components/app/lead-qual-view.tsx`](./components/app/lead-qual-view.tsx).
 - The voice list (`koi`/`finn`/`marlin`), languages (`en`/`zh`/`ja`), and the dispatched `agentName` default live in [`app-config.ts`](./app-config.ts).
 - The live call UI (audio renderer, control bar, visualizer) is assembled in [`components/agents-ui/`](./components/agents-ui/).
 
