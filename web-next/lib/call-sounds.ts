@@ -25,6 +25,10 @@ export function createCallSounds(): CallSounds {
   let ctx: AudioContext | null = null;
   let ringTimer: ReturnType<typeof setInterval> | null = null;
   let ringStopTimer: ReturnType<typeof setTimeout> | null = null;
+  // Bumped by stopRing()/dispose(); an in-flight async resume callback only plays if its
+  // captured token still matches (so a stopped/disposed ring can't fire a stale pulse or
+  // resurrect a closed AudioContext).
+  let ringToken = 0;
 
   function ac(): AudioContext {
     if (!ctx) {
@@ -54,6 +58,10 @@ export function createCallSounds(): CallSounds {
     o.type = 'sine';
     o.frequency.value = 440; // warm mid tone, not a harsh telephone beat
     o.connect(g);
+    o.onended = () => {
+      o.disconnect();
+      g.disconnect();
+    };
     o.start(t);
     o.stop(t + 0.53);
   }
@@ -64,22 +72,30 @@ export function createCallSounds(): CallSounds {
   }
 
   function startRing() {
-    stopRing();
+    stopRing(); // invalidates any prior ring token + clears timers
     const c = ac();
+    const token = ringToken;
+    // Guarded so a resume that resolves after stop/dispose can't fire a stale pulse or
+    // resurrect a closed context (ctx would differ or the token would have moved on).
+    const guardedPulse = () => {
+      if (token !== ringToken || ctx !== c) return;
+      ringPulse();
+    };
     // Play the first pulse only once the context is actually running; otherwise the
     // synchronous pulse is scheduled against a frozen (suspended) clock and is silent.
     if (c.state === 'suspended') {
       c.resume()
-        .then(() => ringPulse())
+        .then(guardedPulse)
         .catch(() => {});
     } else {
-      ringPulse();
+      guardedPulse();
     }
-    ringTimer = setInterval(ringPulse, 1600); // slow, unhurried cadence
+    ringTimer = setInterval(guardedPulse, 1600); // slow, unhurried cadence
     ringStopTimer = setTimeout(stopRing, 20_000); // hard cap so it never rings forever
   }
 
   function stopRing() {
+    ringToken += 1; // invalidate any pending resume callback / interval tick
     if (ringTimer) {
       clearInterval(ringTimer);
       ringTimer = null;
@@ -110,6 +126,10 @@ export function createCallSounds(): CallSounds {
       o.type = 'sine';
       o.frequency.value = f;
       o.connect(g);
+      o.onended = () => {
+        o.disconnect();
+        g.disconnect();
+      };
       o.start(t + dt);
       o.stop(t + dt + 0.4);
     });
