@@ -15,6 +15,7 @@ type Probe = {
 } | null;
 
 const NB = 48; // bar count
+const BAR_SMOOTHING = 0.82;
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -71,7 +72,7 @@ export function useWaveform(
       const source = ctx.createMediaStreamSource(new MediaStream([track]));
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.72;
+      analyser.smoothingTimeConstant = 0.86;
       source.connect(analyser); // analyser is a sink — no onward connection, no double audio
       ref.current = { source, analyser, data: new Uint8Array(analyser.fftSize) };
     }
@@ -127,8 +128,16 @@ export function useWaveform(
 
     let raf = 0;
     let phase = 0;
+    const bars = new Float32Array(NB);
     // Reused across frames (fftSize 256 → 128 bins) to avoid per-frame allocation.
     const freqBuf = new Uint8Array(128);
+    function logBin(i: number, bins: number) {
+      const min = 1;
+      const max = Math.max(min + 1, Math.floor(bins * 0.78));
+      const t = i / Math.max(1, NB - 1);
+      return Math.min(bins - 1, Math.round(min * Math.pow(max / min, t)));
+    }
+
     function draw() {
       raf = requestAnimationFrame(draw);
       const w = cvs!.clientWidth;
@@ -167,14 +176,15 @@ export function useWaveform(
       }
 
       for (let i = 0; i < NB; i++) {
-        let v: number;
+        let target: number;
         if (freq) {
-          const idx = Math.floor((i / NB) * freq.length * 0.7);
-          v = freq[idx] / 255;
+          const idx = logBin(i, freq.length);
+          target = Math.pow(freq[idx] / 255, 0.68);
         } else {
-          v = amp * 8 * (0.5 + 0.5 * Math.sin(phase + i * 0.4));
+          target = amp * 8 * (0.5 + 0.5 * Math.sin(phase + i * 0.4));
         }
-        const bh = Math.max(2, v * (h * 0.9));
+        bars[i] = bars[i] * BAR_SMOOTHING + target * (1 - BAR_SMOOTHING);
+        const bh = Math.max(2, bars[i] * (h * 0.9));
         const x = i * gap + gap * 0.18;
         const bw = gap * 0.5;
         roundRect(x, mid - bh / 2, bw, bh, bw / 2);
