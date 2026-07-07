@@ -478,6 +478,42 @@ html[data-theme='paper'] body {
 .vchip.on .go {
   opacity: 1;
 }
+.custom-voice {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+.custom-label,
+.custom-help {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.custom-label {
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+.custom-voice input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+.custom-voice input:focus,
+.custom-voice.on input {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.custom-help.err {
+  color: #b42318;
+}
 .start-call {
   margin-top: 12px;
   min-width: 180px;

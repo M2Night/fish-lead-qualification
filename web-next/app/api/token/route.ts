@@ -7,6 +7,7 @@ import { RoomAgentDispatch, RoomConfiguration } from '@livekit/protocol';
 const AGENT_NAME = 'lead-qual';
 const SUPPORTED_LANGUAGES = new Set(['en', 'zh', 'ja']);
 const SUPPORTED_VOICES = new Set(['koi', 'finn', 'marlin']);
+const CUSTOM_VOICE_ID_RE = /^[0-9a-f]{32}$/i; // a raw Fish voice_id from the custom field
 const MAX_BODY_BYTES = 4096; // room_config is tiny; reject anything larger
 const MAX_METADATA_CHARS = 1024;
 
@@ -47,7 +48,10 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const client = readClientMetadata(body?.room_config);
     const language = SUPPORTED_LANGUAGES.has(client.language ?? '') ? client.language! : 'en';
-    const voice = SUPPORTED_VOICES.has(client.voice ?? '') ? client.voice : undefined;
+    // Accept a preset key OR a raw 32-hex custom voice id; reject anything else (untrusted).
+    const rawVoice = (client.voice ?? '').trim().toLowerCase();
+    const voice =
+      SUPPORTED_VOICES.has(rawVoice) || CUSTOM_VOICE_ID_RE.test(rawVoice) ? rawVoice : undefined;
     const metadata = JSON.stringify({
       language,
       ...(voice ? { voice } : {}),

@@ -12,6 +12,8 @@ import { LANGUAGES, VOICES } from '@/app-config';
 import { useWaveform } from '@/hooks/useWaveform';
 import { type CallSounds, createCallSounds } from '@/lib/call-sounds';
 
+const CUSTOM_VOICE_ID_RE = /^[0-9a-f]{32}$/i;
+
 // Per-voice accent hue (display only) — ported from the original demo.
 const VOICE_HUE: Record<string, string> = {
   koi: '#a63bbd',
@@ -112,6 +114,7 @@ export function LeadQualView({
   const [err, setErr] = useState<string | null>(null);
   const [perfEnabled, setPerfEnabled] = useState(false);
   const [perfLines, setPerfLines] = useState<string[]>([]);
+  const [customVoiceId, setCustomVoiceId] = useState('');
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const perfEnabledRef = useRef(false);
@@ -155,6 +158,9 @@ export function LeadQualView({
 
   const callInProgress = isConnected || starting;
   const showSession = isConnected;
+  const knownVoiceSelected = VOICES.some((v) => v.id === voice);
+  const customVoiceSelected = Boolean(voice) && !knownVoiceSelected;
+  const customVoiceInvalid = customVoiceSelected && !CUSTOM_VOICE_ID_RE.test(voice);
 
   useEffect(() => {
     const enabled = new URLSearchParams(window.location.search).has('perf');
@@ -263,11 +269,21 @@ export function LeadQualView({
 
   function selectVoice(id: string) {
     if (callInProgress) return;
+    setCustomVoiceId('');
     onVoiceChange(id);
   }
 
-  function startCall() {
+  function updateCustomVoice(value: string) {
     if (callInProgress) return;
+    // Lowercase so the displayed id matches what the server uses (Fish ids are lowercase hex).
+    const next = value.trim().toLowerCase();
+    setCustomVoiceId(next);
+    // Empty custom field falls back to the first preset so a voice is always selected.
+    onVoiceChange(next || VOICES[0]?.id || '');
+  }
+
+  function startCall() {
+    if (callInProgress || customVoiceInvalid) return;
     startPerf();
     resetMicGate();
     try {
@@ -326,6 +342,23 @@ export function LeadQualView({
     soundsRef.current?.stopRing();
     setErr('The agent failed to connect. Please try again.');
   }, [state]);
+
+  // Network watchdog for the CONNECTING phase (case A): we clicked Start but the room never
+  // connects (client↔SFU stalled — the page just sits on "Connecting…"). After 8s, stop and
+  // ask the user to refresh instead of hanging. Only fires while starting && !isConnected;
+  // a successful connect flips isConnected and clears the timer before it fires.
+  useEffect(() => {
+    if (!starting || isConnected) return;
+    const t = setTimeout(() => {
+      if (isConnected) return;
+      markPerf('connect stalled — stopping (network)');
+      soundsRef.current?.stopRing();
+      setStarting(false);
+      setErr('Network busy — please refresh the page and try again.');
+      void end().catch(() => {});
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [starting, isConnected, markPerf, end]);
 
   // Auto-clear a transient error after a few seconds.
   useEffect(() => {
@@ -410,9 +443,15 @@ export function LeadQualView({
     const t = setTimeout(() => {
       if (micEnabledAfterOpenerRef.current || micEnableInFlightRef.current) return;
       if (!firstAgentSpeechSeenRef.current) {
-        // Agent never greeted — keep the mic off (agent must speak first), surface it.
+        // Agent never greeted — keep the mic off (agent must speak first), surface it. With a
+        // custom voice, an invalid/unauthorized id is the likely cause (Fish can't synthesize
+        // it, so no audio) — point at it.
         markPerf('opener missing (mic kept off)');
-        setErr('The agent did not greet. Please end the call and try again.');
+        setErr(
+          customVoiceSelected
+            ? 'The custom voice ID may be invalid. Please check it and try again.'
+            : 'The agent did not greet. Please end the call and try again.'
+        );
       } else if (stateRef.current !== 'speaking') {
         // Opener played and it's not mid-utterance — safe to recover the mic.
         enableMic('mic enable fallback');
@@ -420,7 +459,9 @@ export function LeadQualView({
       // else: opener still playing (rare, >8s) — defer to the normal speaking→listening path.
     }, 8000);
     return () => clearTimeout(t);
-  }, [isConnected, enableMic, markPerf]);
+    // customVoiceSelected is stable while connected (voice can't change mid-call); included
+    // for the voice-aware message and to satisfy exhaustive-deps.
+  }, [isConnected, enableMic, markPerf, customVoiceSelected]);
 
   useEffect(() => {
     if (!isConnected) {
@@ -537,12 +578,32 @@ export function LeadQualView({
                   })}
                 </div>
 
+                <label className={customVoiceSelected ? 'custom-voice on' : 'custom-voice'}>
+                  <span className="custom-label">Custom voice ID</span>
+                  <input
+                    value={customVoiceId || (customVoiceSelected ? voice : '')}
+                    onChange={(e) => updateCustomVoice(e.target.value)}
+                    disabled={callInProgress}
+                    spellCheck={false}
+                    autoCapitalize="none"
+                    autoComplete="off"
+                    maxLength={32}
+                    placeholder="32-character Fish voice ID"
+                    aria-invalid={customVoiceInvalid}
+                  />
+                  <span className={customVoiceInvalid ? 'custom-help err' : 'custom-help'}>
+                    {customVoiceInvalid
+                      ? 'Enter a valid 32-character Fish voice ID.'
+                      : 'Optional: use any Fish voice ID from your account.'}
+                  </span>
+                </label>
+
                 <button
                   className="start-call"
                   onFocus={() => warmConnection('prewarm focus')}
                   onPointerDown={() => warmConnection('prewarm pointerdown')}
                   onClick={startCall}
-                  disabled={starting}
+                  disabled={starting || customVoiceInvalid}
                 >
                   {starting ? 'Connecting...' : 'Start call'}
                 </button>

@@ -24,3 +24,6 @@ out/
 
 # IDE module files
 *.iml
+
+# local pnpm store cache
+.pnpm-store/
